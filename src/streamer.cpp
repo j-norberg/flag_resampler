@@ -92,8 +92,8 @@ struct BufsT
 	float _in_buf_time[K_BUFS];	// input goes here and is sliding in to this buffer from the back
 
 	// to ensure no aliasing, all buffers have to be explicit
-	float _buf_filter[K_BUFS]; // should only allocate this one
-	float _buf_work[K_BUFS]; // this one points into buf above
+	float _buf_filter[K_BUFS];
+	float _buf_work[K_BUFS];
 
 	float _in_buf_freq[K_BUFS];	// input is transformed into frequences
 
