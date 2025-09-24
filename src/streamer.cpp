@@ -15,12 +15,7 @@
 #include "sample_producer.h"
 
 
-// fixme todo jnorberg don't need this in reality
-extern bool simple_wav_write_mono(const char* file_name, float* buf, int64_t total_frame_count);
-
 // hamming is bad
-
-// would like to test:
 // Blackman–Harris window
 // Dolph–Chebyshev window
 // Generalized adaptive polynomial (GAP) window
@@ -544,9 +539,6 @@ void create_filter(float* out_kernel_buffer, int half_len, int kernel_len, float
 	int zero_count = (transform_size - len1);
 	memset(filter + len1, 0, zero_count * sizeof(float));
 
-	// debug
-//	simple_wav_write_mono("flt_1.wav", filter, transform_size);
-
 	// self convolve
 	float* buf_freq = (float*)pffft_aligned_malloc(transform_size * sizeof(float));
 	float* buf_work= (float*)pffft_aligned_malloc(transform_size * sizeof(float));
@@ -593,10 +585,6 @@ ISampleProducer* make_integer_upsampler(int up, float bw, ISampleProducer* input
 
 	float up_sqrt = sqrtf((float)up);
 	create_filter(filter_kernel, filter_1_half_len, filter_2_len, bw / up, bw / up_sqrt );
-
-	// debug
-//	simple_wav_write_mono("flt_2.wav", filter_kernel, k_transform_len);
-
 
 	ISampleProducer* upsampler = new StreamerUpT<k_transform_len>(filter_kernel, filter_2_len, up, input);
 	pffft_aligned_free(filter_kernel); // filter_kernel is only used in init

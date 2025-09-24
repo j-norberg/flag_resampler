@@ -8,7 +8,6 @@
 struct FileReaderImpl;
 
 // Represents an audio - stream
-// fixme handle channels
 class FileReader : public ISampleProducer
 {
 public:
