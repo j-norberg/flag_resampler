@@ -1,0 +1,11 @@
+.vs/
+Debug/
+Release/
+x64/
+vsProj/x64/
+vsProj/Debug/
+vsProj/Release/
+vsProj/*.wav
+*.wav
+*.o
+*.exe
