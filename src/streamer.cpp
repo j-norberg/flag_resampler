@@ -22,9 +22,8 @@
 
 #if 0
 // blackman
-inline double win_funcion(double f)
+inline double win_funcion(double p)
 {
-	double p = 0.5 * f + 0.5; // translate from whole window to half-window
 	double v =
 		+ 0.42
 		- 0.50 * cos(p * M_PI * 2.0) +
@@ -36,9 +35,8 @@ inline double win_funcion(double f)
 
 #if 1
 //_blackman_nuttall
-inline double win_funcion(double f)
+inline double win_funcion_bn(double p)
 {
-	double p = 0.5 * f + 0.5; // translate from whole window to half-window
 	double v =
 		+ 0.3635819
 		- 0.4891775 * cos(p * M_PI * 2.0)
@@ -48,7 +46,6 @@ inline double win_funcion(double f)
 	return v;
 }
 #endif
-
 
 
 
@@ -64,7 +61,7 @@ void create_windowed_sinc(double* dest, int count, double window_time_scale, dou
 	{
 		double p01 = (i + 0.5) * recip; // 0..1
 		double x = (p01 * 2.0) - 1.0;   // -1 .. 1
-		double win = win_funcion(x) * window_amp_scale;
+		double win = win_funcion_bn(p01) * window_amp_scale;
 		double pN = x * mul; // normalized -> sin
 		if (abs(pN) > epsilon)
 		{
@@ -77,10 +74,7 @@ void create_windowed_sinc(double* dest, int count, double window_time_scale, dou
 			dest[i] = win;
 		}
 	}
-
 }
-
-
 
 
 
@@ -558,7 +552,7 @@ struct InterpolatedSampler : ISampleProducer
 };
 
 
-void create_filter(double* out_kernel_buffer, int half_len, int kernel_len, double scale_len, double scale_amp)
+void create_filter(double* out_kernel_buffer, int half_len, int kernel_len, double bw, double up)
 {
 	// create initial filter
 	int len1 = 1 + half_len * 2;
@@ -575,23 +569,35 @@ void create_filter(double* out_kernel_buffer, int half_len, int kernel_len, doub
 
 	double* filter = (double*)pffftd_aligned_malloc(transform_size * sizeof(double));
 
+	double scale_len = bw / up;
+	double scale_amp = bw / sqrt((double)up);
 	create_windowed_sinc(filter, len1, scale_len, scale_amp);
 	int zero_count = (transform_size - len1);
+
+	// clear the rest of the transform
 	memset(filter + len1, 0, zero_count * sizeof(double));
 
 	// self convolve
-	double* buf_freq = (double*)pffftd_aligned_malloc(transform_size * sizeof(double));
 	double* buf_work= (double*)pffftd_aligned_malloc(transform_size * sizeof(double));
+	double* buf_freq = (double*)pffftd_aligned_malloc(transform_size * sizeof(double));
+	double* buf_freq2 = (double*)pffftd_aligned_malloc(transform_size * sizeof(double));
 
 	PFFFTD_Setup* fft = pffftd_new_setup(transform_size, PFFFTD_REAL);
-
 	pffftd_transform(fft, filter, buf_freq, buf_work, PFFFTD_FORWARD);
-	pffftd_zconvolve_no_accumulate(fft, buf_freq, buf_freq, buf_freq, transform_recip); // self-convolve
+
+	// create a second sligtly lower
+	scale_len = (bw * 0.999) / up;
+	scale_amp = (bw * 0.999) / sqrt((double)up);
+	create_windowed_sinc(filter, len1, scale_len, scale_amp);
+	pffftd_transform(fft, filter, buf_freq2, buf_work, PFFFTD_FORWARD);
+
+	pffftd_zconvolve_no_accumulate(fft, buf_freq2, buf_freq, buf_freq, transform_recip); // convolve
 	pffftd_transform(fft, buf_freq, out_kernel_buffer, buf_work, PFFFTD_BACKWARD);
 
 	pffftd_destroy_setup(fft);
-	pffftd_aligned_free(buf_work);
+	pffftd_aligned_free(buf_freq2);
 	pffftd_aligned_free(buf_freq);
+	pffftd_aligned_free(buf_work);
 	pffftd_aligned_free(filter);
 }
 
@@ -605,7 +611,7 @@ void create_filter(double* out_kernel_buffer, int half_len, int kernel_len, doub
 
 enum
 {
-	k_bits = 18, // 88 ms  
+	k_bits = 19,
 	k_transform_len = 1 << k_bits
 };
 
@@ -625,8 +631,7 @@ ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* inpu
 	double* filter_kernel = (double*)pffftd_aligned_malloc(k_transform_len * sizeof(double)); // filter_kernel is only used in init
 	memset(filter_kernel, 0, k_transform_len * sizeof(double));
 
-	double up_sqrt = sqrt((double)up);
-	create_filter(filter_kernel, filter_1_half_len, filter_2_len, bw / up, bw / up_sqrt );
+	create_filter(filter_kernel, filter_1_half_len, filter_2_len, bw, up );
 
 	ISampleProducer* upsampler = new StreamerUpT<k_transform_len>(filter_kernel, filter_2_len, up, input);
 	pffftd_aligned_free(filter_kernel); // filter_kernel is only used in init
@@ -649,6 +654,7 @@ ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* inpu
 // 16 -> 64k
 // 17 -> 128k
 // 18 -> 256k
+// 19 -> 512k
 
 ISampleProducer* streamer_factory(ISampleProducer* input, int sr_out)
 {
