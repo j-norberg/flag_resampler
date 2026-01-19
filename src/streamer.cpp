@@ -223,12 +223,15 @@ struct StreamerUpT : ISampleProducer
 
 		_channels_buf.resize(_channel_count);
 
-		// fixme read first frame and fill OSS structs with this frame
+
+		// read first frame and fill OSS structs with the first frame
 		// to not create a "snap" from zero to first frame
+		pre_fill_oss_buffer();
+		const int kFirstFrame = 2;
 
 		// pre-feed to counteract internal latency
 		const int kInterpolatedSamplerHalf = 3;
-		int pre_feed = _filter_size / 2 - kInterpolatedSamplerHalf;
+		int pre_feed = (_filter_size / 2) - kInterpolatedSamplerHalf - kFirstFrame;
 		skip_next(pre_feed);
 	}
 
@@ -240,6 +243,39 @@ struct StreamerUpT : ISampleProducer
 
 	int get_sample_rate() override { return _sr; };
 	int get_channel_count() override { return _channel_count; }
+
+	inline void pre_fill_oss_buffer()
+	{
+		// get one single (interleaved) frame for all channels
+		_input->get_next(_channels_buf.data(), 1);
+
+		// 1. de-interleave
+		// 2. zero-padding
+
+		for (int i = 0; i < _inblock_size; ++i)
+		{
+			if (_pad_ttl < 1)
+			{
+				// populate oss-structs
+				for (int c = 0; c < _channel_count; ++c)
+					_oss[c].write(i, _channels_buf[c]);
+
+				// reset ttl
+				_pad_ttl = _up;
+			}
+			else
+			{
+				// zero-pad
+				for (int c = 0; c < _channel_count; ++c)
+					_oss[c].write(i, 0);
+			}
+
+			--_pad_ttl;
+		}
+
+		for (int c = 0; c < _channel_count; ++c)
+			_oss[c].convolve();
+	}
 
 	inline void fill_oss_buffer()
 	{
@@ -463,7 +499,7 @@ struct InterpolatedSampler : ISampleProducer
 			// write interleaved
 			for (int c = 0; c < _channel_count; ++c)
 			{
-				buf_interleaved[write_index] = sample_16x_6p_5z(_bufs[c]._b, k_mask, _read_index, frac);
+				buf_interleaved[write_index] = sample_32x_6p_5z(_bufs[c]._b, k_mask, _read_index, frac);
 				++write_index;
 			}
 
@@ -624,7 +660,7 @@ ISampleProducer* streamer_factory(ISampleProducer* input, int sr_out)
 		bw *= (double)sr_out / (double)sr_in;
 
 	// try and find integer ratio (too high becomes very expensive)
-	for (int up = 1; up < 16; ++up)
+	for (int up = 1; up < 32; ++up)
 	{
 		for (int decimate = 1; decimate < 256; ++decimate)
 		{
@@ -635,10 +671,9 @@ ISampleProducer* streamer_factory(ISampleProducer* input, int sr_out)
 				return new TrivialDecimator(decimate, make_integer_upsampler(up, bw, input));
 			}
 		}
-
 	}
 
-	return new InterpolatedSampler(sr_out, make_integer_upsampler(16, bw, input) );
+	return new InterpolatedSampler(sr_out, make_integer_upsampler(32, bw, input) );
 }
 
 
