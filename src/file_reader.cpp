@@ -115,12 +115,10 @@ void FileReader::read_more_data_from_file()
 		_did_final_clear = true; // unexpected case
 	}
 
-	// filled buffer, good
-	if (samples_read == samples_to_read)
-		return;
-
 	if (samples_read == 0)
+	{
 		_did_final_clear = true;
+	}
 	else
 	{
 		if (samples_read < (size_t)_channel_count)
@@ -129,13 +127,17 @@ void FileReader::read_more_data_from_file()
 		}
 		else
 		{
-			size_t last_frames = samples_read - _channel_count;
+			size_t last_frame = samples_read - _channel_count;
 			
 			// store off last samples read
 			for (int i = 0; i < _channel_count; ++i)
-				_last_frame_f64[i] = _buf_interleaved_f64[last_frames + i];
+				_last_frame_f64[i] = _buf_interleaved_f64[last_frame + i];
 		}
 	}
+
+	// filled buffer, good, nothing more to do
+	if (samples_read == samples_to_read)
+		return;
 
 	// clear rest of buffer with last valid sample
 	for (; samples_read < samples_to_read; ++samples_read)

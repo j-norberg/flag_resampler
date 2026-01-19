@@ -40,7 +40,7 @@ inline double win_funcion(double f)
 {
 	double p = 0.5 * f + 0.5; // translate from whole window to half-window
 	double v =
-		+0.3635819
+		+ 0.3635819
 		- 0.4891775 * cos(p * M_PI * 2.0)
 		+ 0.1365995 * cos(p * M_PI * 4.0)
 		- 0.0106411 * cos(p * M_PI * 6.0);
@@ -77,6 +77,7 @@ void create_windowed_sinc(double* dest, int count, double window_time_scale, dou
 			dest[i] = win;
 		}
 	}
+
 }
 
 
@@ -221,6 +222,9 @@ struct StreamerUpT : ISampleProducer
 			_oss[i].init(filter_kernel, filter_size);
 
 		_channels_buf.resize(_channel_count);
+
+		// fixme read first frame and fill OSS structs with this frame
+		// to not create a "snap" from zero to first frame
 
 		// pre-feed to counteract internal latency
 		const int kInterpolatedSamplerHalf = 3;
@@ -407,7 +411,7 @@ struct InterpolatedSampler : ISampleProducer
 		_read_index_frac = 0;
 		_read_index_frac_add = input->get_sample_rate();
 		_read_index_frac_limit = sr;
-		_read_index_frac_limit_recip = 1.0f / sr;
+		_read_index_frac_limit_recip = 1.0f / (double)sr;
 
 		_channel_buffer.resize(_channel_count);
 		_bufs = new Buf[_channel_count];
@@ -451,7 +455,7 @@ struct InterpolatedSampler : ISampleProducer
 	void get_next(double* buf_interleaved, int64_t frame_count) override
 	{
 		int write_index = 0;
-		for (int i = 0; i < frame_count; ++i)
+		for (int frame_index = 0; frame_index < frame_count; ++frame_index)
 		{
 			// calculate frac (common for all channels)
 			double frac = (double)_read_index_frac * _read_index_frac_limit_recip;
@@ -489,7 +493,7 @@ struct InterpolatedSampler : ISampleProducer
 
 	void skip_next(int64_t frame_count) override
 	{
-		for (int i = 0; i < frame_count; ++i)
+		for (int frame_index = 0; frame_index < frame_count; ++frame_index)
 		{
 			// move index
 			_read_index_frac += _read_index_frac_add;
