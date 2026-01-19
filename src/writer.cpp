@@ -39,16 +39,16 @@ struct WhiteNoise
 
 
 
-inline int ftoi(float v)
+inline int ftoi(double v)
 {
 	v += (v >= 0) ? 0.5f : -0.5f;
 	return (int)v;
 }
 
 // fixme sse
-inline short clamp_short(float v)
+inline short clamp_short(double v)
 {
-	const float lim_f = 32767.0f;
+	const double lim_f = 32767.0;
 	const int lim_i = 32767;
 
 	int vi = ftoi(v * lim_f);
@@ -64,9 +64,9 @@ inline short clamp_short(float v)
 	return lim_i;
 }
 
-inline int32_t clamp_24(float v)
+inline int32_t clamp_24(double v)
 {
-	const float lim_f = 8388607.0f;
+	const double lim_f = 8388607.0f;
 	const int lim_i = 8388607;
 
 	int32_t vi = ftoi(v * lim_f);
@@ -132,9 +132,9 @@ int FormatToWavFormat(Writer::OutFormat fmt)
 	return -1;
 }
 
-float* allocate_dither_noise(Writer::OutFormat fmt, int64_t frame_count)
+double* allocate_dither_noise(Writer::OutFormat fmt, int64_t frame_count)
 {
-	float* dest = nullptr;
+	double* dest = nullptr;
 	WhiteNoise wn;
 
 	float recip = 1;
@@ -158,10 +158,10 @@ float* allocate_dither_noise(Writer::OutFormat fmt, int64_t frame_count)
 
 	// fixme, little optional notch around 4k? and a shelf at 10k?
 
-	dest = new float[frame_count];
+	dest = new double[frame_count];
 	for (int64_t i = 0; i < frame_count; ++i)
 	{
-		dest[i] = (float)wn.next_triangle() * recip;
+		dest[i] = (double)wn.next_triangle() * recip;
 	}
 
 	return dest;
@@ -191,7 +191,7 @@ Writer::Writer(const char* file_name, int64_t total_frame_count, ISampleProducer
 	_wav = drwav_open_file_write(file_name, &format);
 	// fixme deal with write error
 
-	_buf_interleaved = new float[k_writer_buf_frames * channel_count];
+	_buf_interleaved_f64 = new double[k_writer_buf_frames * channel_count];
 
 	_buf_interleaved_quantized = nullptr;
 
@@ -199,10 +199,11 @@ Writer::Writer(const char* file_name, int64_t total_frame_count, ISampleProducer
 	switch (fmt)
 	{
 	case Writer::eFmtFloat:
+		_buf_interleaved_quantized = new uint8_t[k_writer_buf_frames * channel_count * sizeof(float)];
 		break;
 
 	case Writer::eFmtInt16Dithered:
-		_buf_interleaved_quantized = new uint8_t[k_writer_buf_frames * channel_count * 2];
+		_buf_interleaved_quantized = new uint8_t[k_writer_buf_frames * channel_count * sizeof(short)];
 		break;
 
 	case Writer::eFmtInt24Dithered:
@@ -221,7 +222,7 @@ Writer::~Writer()
 	// close
 	drwav_close(_wav);
 
-	delete[] _buf_interleaved;
+	delete[] _buf_interleaved_f64;
 
 	if (_buf_interleaved_quantized != nullptr)
 		delete[] _buf_interleaved_quantized;
@@ -248,19 +249,24 @@ bool Writer::update()
 	size_t frame_count = _frame_index - prev_index;
 
 	// read/resample
-	_sample_producer->get_next(_buf_interleaved, frame_count);
+	_sample_producer->get_next(_buf_interleaved_f64, frame_count);
 
 	//
 	int channel_count = _sample_producer->get_channel_count();
-
-	uint8_t* buf_to_write = nullptr;
 
 	// straight write, alt. quantize and write
 	switch (_fmt)
 	{
 	case Writer::eFmtFloat:
 		{
-			buf_to_write = (uint8_t*)_buf_interleaved;
+			// double -> float
+			// fixme SSE
+			float* dest = (float*)_buf_interleaved_quantized;
+			size_t sample_count = frame_count * channel_count;
+			for (size_t i = 0; i < sample_count; ++i)
+			{
+				dest[i] = (float)_buf_interleaved_f64[i];
+			}
 		}
 		break;
 
@@ -271,17 +277,15 @@ bool Writer::update()
 			uint8_t* dest_char = _buf_interleaved_quantized;
 			for (size_t fi = 0; fi < frame_count; ++fi)
 			{
-				float dn = _buf_dither_noise[fi];
+				double dn = _buf_dither_noise[fi];
 				for (int c = 0; c < channel_count; ++c)
 				{
-					int32_t q = clamp_24(_buf_interleaved[read_index] + dn);
+					int32_t q = clamp_24(_buf_interleaved_f64[read_index] + dn);
 					write_24(dest_char, q);
 					dest_char += 3;
 					++read_index;
 				}
 			}
-
-			buf_to_write = _buf_interleaved_quantized;
 		}
 		break;
 
@@ -292,24 +296,24 @@ bool Writer::update()
 			size_t index = 0;
 			for (size_t fi = 0; fi < frame_count; ++fi)
 			{
-				float dn = _buf_dither_noise[fi];
+				double dn = _buf_dither_noise[fi];
 				for (int c = 0; c < channel_count; ++c)
 				{
-					dest[index] = clamp_short(_buf_interleaved[index] + dn);
+					dest[index] = clamp_short(_buf_interleaved_f64[index] + dn);
 					++index;
 				}
 			}
-
-			buf_to_write = _buf_interleaved_quantized;
 		}
 		break;
 
 	default:
+		// bug here
+		return false;
 		break;
 	}
 
 	// write buffer
-	drwav_uint64 dummy_for_now = drwav_write(_wav, frame_count * channel_count, buf_to_write);
+	drwav_uint64 dummy_for_now = drwav_write(_wav, frame_count * channel_count, _buf_interleaved_quantized);
 	(void)dummy_for_now; // fixme check for issues
 
 	// return

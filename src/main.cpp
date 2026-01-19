@@ -38,6 +38,7 @@ flag_src.exe --input infile.wav --output outfile.wav --sample_rate 44100 --forma
 f32 = 32 bit float (this is the default)
 )";
 
+// fixme support for reading 64bits files? 
 
 class Timer
 {

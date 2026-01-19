@@ -29,10 +29,12 @@ public:
 	};
 
 private:
-	float* _buf_interleaved = nullptr;
+	double* _buf_interleaved_f64 = nullptr;
 	
 	// for quantization (used for 16 and 24 bit)
-	float* _buf_dither_noise = nullptr;
+	double* _buf_dither_noise = nullptr;
+
+	// need to quantize from double to float too, but apply no dither noise
 	uint8_t* _buf_interleaved_quantized = nullptr;
 
 	int64_t _total_frame_count = 0;

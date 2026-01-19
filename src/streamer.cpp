@@ -1,4 +1,4 @@
-﻿#include "dep/pffft.h"
+﻿#include "dep/pffft-double.h"
 
 #include <vector>
 #include <cassert>
@@ -55,7 +55,7 @@ inline double win_funcion(double f)
 
 
 // 
-void create_windowed_sinc(float* dest, int count, double window_time_scale, double window_amp_scale)
+void create_windowed_sinc(double* dest, int count, double window_time_scale, double window_amp_scale)
 {
 	constexpr double epsilon = std::numeric_limits<double>::epsilon();
 	double recip = 1.0 / count;
@@ -70,11 +70,11 @@ void create_windowed_sinc(float* dest, int count, double window_time_scale, doub
 		{
 			double sinc = sin(pN) / pN;
 			double v = sinc * win;
-			dest[i] = (float)v;
+			dest[i] = v;
 		}
 		else
 		{
-			dest[i] = (float)win;
+			dest[i] = win;
 		}
 	}
 }
@@ -89,16 +89,16 @@ template<int K_BUFS>
 struct BufsT
 {
 	// this is the only one the is not fully temp
-	float _in_buf_time[K_BUFS];	// input goes here and is sliding in to this buffer from the back
+	double _in_buf_time[K_BUFS];	// input goes here and is sliding in to this buffer from the back
 
 	// to ensure no aliasing, all buffers have to be explicit
-	float _buf_filter[K_BUFS];
-	float _buf_work[K_BUFS];
+	double _buf_filter[K_BUFS];
+	double _buf_work[K_BUFS];
 
-	float _in_buf_freq[K_BUFS];	// input is transformed into frequences
+	double _in_buf_freq[K_BUFS];	// input is transformed into frequences
 
-	float _out_buf_freq[K_BUFS];	// result of convolve goes here
-	float _out_buf_time[K_BUFS];	// IFFT here
+	double _out_buf_freq[K_BUFS];	// result of convolve goes here
+	double _out_buf_time[K_BUFS];	// IFFT here
 };
 
 // 
@@ -109,9 +109,9 @@ struct OverlapSaveStructT
 
 	int _filter_size = 0;
 	int _inblock_size = 0;
-	float _transform_recip = 1.0f;
+	double _transform_recip = 1.0f;
 
-	PFFFT_Setup* _fft; // could be shared btw all instances
+	PFFFTD_Setup* _fft; // could be shared btw all instances
 
 	Bufs *_bufs;
 
@@ -123,11 +123,11 @@ struct OverlapSaveStructT
 
 	~OverlapSaveStructT()
 	{
-		pffft_aligned_free(_bufs);
-		pffft_destroy_setup(_fft);
+		pffftd_aligned_free(_bufs);
+		pffftd_destroy_setup(_fft);
 	}
 
-	void init(float* temp_windowed_sinc, int filter_size)
+	void init(double* temp_windowed_sinc, int filter_size)
 	{
 		assert(_bufs == nullptr);
 		assert(_fft == nullptr);
@@ -136,16 +136,16 @@ struct OverlapSaveStructT
 		_inblock_size = TRANSFORM_SIZE - filter_size;
 		_transform_recip = 1.f / TRANSFORM_SIZE;
 
-		_fft = pffft_new_setup(TRANSFORM_SIZE, PFFFT_REAL);
+		_fft = pffftd_new_setup(TRANSFORM_SIZE, PFFFTD_REAL);
 
-		_bufs = (Bufs*)pffft_aligned_malloc(sizeof(Bufs));
+		_bufs = (Bufs*)pffftd_aligned_malloc(sizeof(Bufs));
 		memset(_bufs, 0, sizeof(Bufs));
 
-		pffft_transform(_fft, temp_windowed_sinc, _bufs->_buf_filter, _bufs->_buf_work, PFFFT_FORWARD);
+		pffftd_transform(_fft, temp_windowed_sinc, _bufs->_buf_filter, _bufs->_buf_work, PFFFTD_FORWARD);
 	}
 
 	// 1. fill buffer (call this K_INBUF_SIZE times)
-	inline void write(int index, float v)
+	inline void write(int index, double v)
 	{
 		_bufs->_in_buf_time[_filter_size + index] = v;
 	}
@@ -154,20 +154,20 @@ struct OverlapSaveStructT
 	void convolve()
 	{
 		// FFT
-		pffft_transform( _fft, _bufs->_in_buf_time, _bufs->_in_buf_freq, _bufs->_buf_work, PFFFT_FORWARD);
+		pffftd_transform( _fft, _bufs->_in_buf_time, _bufs->_in_buf_freq, _bufs->_buf_work, PFFFTD_FORWARD);
 
 		// scoot the input-buffer
-		memmove(_bufs->_in_buf_time, _bufs->_in_buf_time + _inblock_size, _filter_size * sizeof(float));
+		memmove(_bufs->_in_buf_time, _bufs->_in_buf_time + _inblock_size, _filter_size * sizeof(double));
 
 		// multiply with "kernel"
-		pffft_zconvolve_no_accumulate(_fft, _bufs->_in_buf_freq, _bufs->_buf_filter, _bufs->_out_buf_freq, _transform_recip);
+		pffftd_zconvolve_no_accumulate(_fft, _bufs->_in_buf_freq, _bufs->_buf_filter, _bufs->_out_buf_freq, _transform_recip);
 
 		// IFFT
-		pffft_transform(_fft, _bufs->_out_buf_freq, _bufs->_out_buf_time, _bufs->_buf_work, PFFFT_BACKWARD);
+		pffftd_transform(_fft, _bufs->_out_buf_freq, _bufs->_out_buf_time, _bufs->_buf_work, PFFFTD_BACKWARD);
 	}
 
 	// 3. read from here (call this K_INBUF_SIZE times)
-	inline float read(int index)
+	inline double read(int index)
 	{
 		return _bufs->_out_buf_time[_filter_size + index];
 	}
@@ -199,10 +199,10 @@ struct StreamerUpT : ISampleProducer
 	int _channel_count;
 	int _sr;
 
-	std::vector<float> _channels_buf;
+	std::vector<double> _channels_buf;
 	OverlapSaveStruct* _oss;
 	
-	StreamerUpT(float* filter_kernel, int filter_size, int up, ISampleProducer* input)
+	StreamerUpT(double* filter_kernel, int filter_size, int up, ISampleProducer* input)
 	{
 		_filter_size = filter_size;
 		_inblock_size = TRANSFORM_SIZE - filter_size;
@@ -270,7 +270,7 @@ struct StreamerUpT : ISampleProducer
 			_oss[c].convolve();
 	}
 
-	void get_next(float* buf_interleaved, int64_t frame_count) override
+	void get_next(double* buf_interleaved, int64_t frame_count) override
 	{
 		int write_index = 0;
 		for (int i = 0; i < frame_count; ++i)
@@ -348,7 +348,7 @@ struct TrivialDecimator : ISampleProducer
 	int get_sample_rate() override { return _out_sr; };
 	int get_channel_count() override { return _channel_count; }
 
-	void get_next(float* buf_interleaved, int64_t frame_count) override
+	void get_next(double* buf_interleaved, int64_t frame_count) override
 	{
 		for (int i = 0; i < frame_count; ++i)
 		{
@@ -383,10 +383,10 @@ struct InterpolatedSampler : ISampleProducer
 	};
 
 	struct Buf {
-		float _b[k_bufs];
+		double _b[k_bufs];
 	};
 
-	std::vector<float> _channel_buffer;
+	std::vector<double> _channel_buffer;
 
 	Buf* _bufs;
 
@@ -394,7 +394,7 @@ struct InterpolatedSampler : ISampleProducer
 	int _read_index_frac;
 	int _read_index_frac_add;
 	int _read_index_frac_limit;
-	float _read_index_frac_limit_recip;
+	double _read_index_frac_limit_recip;
 
 	InterpolatedSampler(int sr, ISampleProducer* input)
 	{
@@ -448,13 +448,13 @@ struct InterpolatedSampler : ISampleProducer
 		}
 	}
 
-	void get_next(float* buf_interleaved, int64_t frame_count) override
+	void get_next(double* buf_interleaved, int64_t frame_count) override
 	{
 		int write_index = 0;
 		for (int i = 0; i < frame_count; ++i)
 		{
 			// calculate frac (common for all channels)
-			float frac = (float)_read_index_frac * _read_index_frac_limit_recip;
+			double frac = (double)_read_index_frac * _read_index_frac_limit_recip;
 
 			// write interleaved
 			for (int c = 0; c < _channel_count; ++c)
@@ -518,7 +518,7 @@ struct InterpolatedSampler : ISampleProducer
 };
 
 
-void create_filter(float* out_kernel_buffer, int half_len, int kernel_len, float scale_len, float scale_amp)
+void create_filter(double* out_kernel_buffer, int half_len, int kernel_len, double scale_len, double scale_amp)
 {
 	// create initial filter
 	int len1 = 1 + half_len * 2;
@@ -529,30 +529,30 @@ void create_filter(float* out_kernel_buffer, int half_len, int kernel_len, float
 	while (transform_size < len2)
 		transform_size <<= 1;
 
-	float transform_recip = 1.0f / transform_size;
+	double transform_recip = 1.0 / transform_size;
 
 	assert(len2 == kernel_len);
 
-	float* filter = (float*)pffft_aligned_malloc(transform_size * sizeof(float));
+	double* filter = (double*)pffftd_aligned_malloc(transform_size * sizeof(double));
 
 	create_windowed_sinc(filter, len1, scale_len, scale_amp);
 	int zero_count = (transform_size - len1);
-	memset(filter + len1, 0, zero_count * sizeof(float));
+	memset(filter + len1, 0, zero_count * sizeof(double));
 
 	// self convolve
-	float* buf_freq = (float*)pffft_aligned_malloc(transform_size * sizeof(float));
-	float* buf_work= (float*)pffft_aligned_malloc(transform_size * sizeof(float));
+	double* buf_freq = (double*)pffftd_aligned_malloc(transform_size * sizeof(double));
+	double* buf_work= (double*)pffftd_aligned_malloc(transform_size * sizeof(double));
 
-	PFFFT_Setup* fft = pffft_new_setup(transform_size, PFFFT_REAL);
+	PFFFTD_Setup* fft = pffftd_new_setup(transform_size, PFFFTD_REAL);
 
-	pffft_transform(fft, filter, buf_freq, buf_work, PFFFT_FORWARD);
-	pffft_zconvolve_no_accumulate(fft, buf_freq, buf_freq, buf_freq, transform_recip); // self-convolve
-	pffft_transform(fft, buf_freq, out_kernel_buffer, buf_work, PFFFT_BACKWARD);
+	pffftd_transform(fft, filter, buf_freq, buf_work, PFFFTD_FORWARD);
+	pffftd_zconvolve_no_accumulate(fft, buf_freq, buf_freq, buf_freq, transform_recip); // self-convolve
+	pffftd_transform(fft, buf_freq, out_kernel_buffer, buf_work, PFFFTD_BACKWARD);
 
-	pffft_destroy_setup(fft);
-	pffft_aligned_free(buf_work);
-	pffft_aligned_free(buf_freq);
-	pffft_aligned_free(filter);
+	pffftd_destroy_setup(fft);
+	pffftd_aligned_free(buf_work);
+	pffftd_aligned_free(buf_freq);
+	pffftd_aligned_free(filter);
 }
 
 
@@ -569,7 +569,7 @@ enum
 	k_transform_len = 1 << k_bits
 };
 
-ISampleProducer* make_integer_upsampler(int up, float bw, ISampleProducer* input)
+ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* input)
 {
 	int filter_1_half_len = 640 + up * 460; // does this make sense?
 	int filter_1_len = filter_1_half_len * 2 + 1;
@@ -580,14 +580,14 @@ ISampleProducer* make_integer_upsampler(int up, float bw, ISampleProducer* input
 
 	assert(k_transform_len > (filter_2_len + 1024));
 
-	float* filter_kernel = (float*)pffft_aligned_malloc(k_transform_len * sizeof(float)); // filter_kernel is only used in init
-	memset(filter_kernel, 0, k_transform_len * sizeof(float));
+	double* filter_kernel = (double*)pffftd_aligned_malloc(k_transform_len * sizeof(double)); // filter_kernel is only used in init
+	memset(filter_kernel, 0, k_transform_len * sizeof(double));
 
-	float up_sqrt = sqrtf((float)up);
+	double up_sqrt = sqrt((double)up);
 	create_filter(filter_kernel, filter_1_half_len, filter_2_len, bw / up, bw / up_sqrt );
 
 	ISampleProducer* upsampler = new StreamerUpT<k_transform_len>(filter_kernel, filter_2_len, up, input);
-	pffft_aligned_free(filter_kernel); // filter_kernel is only used in init
+	pffftd_aligned_free(filter_kernel); // filter_kernel is only used in init
 
 	return upsampler;
 }
@@ -613,9 +613,9 @@ ISampleProducer* streamer_factory(ISampleProducer* input, int sr_out)
 	int sr_in = input->get_sample_rate();
 
 	// fixme bw can be input
-	float bw = 0.99f;
+	double bw = 0.99f;
 	if (sr_out < sr_in)
-		bw *= (float)sr_out / (float)sr_in;
+		bw *= (double)sr_out / (double)sr_in;
 
 	// try and find integer ratio (too high becomes very expensive)
 	for (int up = 1; up < 16; ++up)

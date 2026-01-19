@@ -11,7 +11,7 @@ public:
 	virtual int get_sample_rate() = 0;
 	virtual int get_channel_count() = 0;
 
-	virtual void get_next(float* buf_interleaved, int64_t frame_count) = 0;
+	virtual void get_next(double* buf_interleaved, int64_t frame_count) = 0;
 	virtual void skip_next(int64_t frame_count) = 0;
 };
 

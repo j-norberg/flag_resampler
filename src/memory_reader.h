@@ -10,7 +10,7 @@
 class MemoryReader : public ISampleProducer
 {
 private:
-	const float* _buf_interleaved = nullptr;
+	const double* _buf_interleaved = nullptr;
 
 	int _sample_rate = 44100;
 	int _channel_count = 1;
@@ -23,7 +23,7 @@ private:
 
 public:
 
-	MemoryReader(const float* buf, int64_t frame_count, int sample_rate, int channel_count)
+	MemoryReader(const double* buf, int64_t frame_count, int sample_rate, int channel_count)
 	{
 		_buf_interleaved = buf;
 		_channel_count = channel_count;
@@ -34,7 +34,7 @@ public:
 	int get_sample_rate() { return _sample_rate; }
 	int get_channel_count() { return _channel_count; }
 	
-	inline void get_next(float* buf_interleaved, int64_t frame_count)
+	inline void get_next(double* buf_interleaved, int64_t frame_count)
 	{
 		// fixme can be simpler/faster
 		int64_t fi = 0;

@@ -62,7 +62,7 @@ FileReader::FileReader(const char* file_name)
 	}
 
 	// allocate buffers
-	_buf_interleaved = new float[k_reader_buf_frames * _channel_count];
+	_buf_interleaved_f32 = new float[k_reader_buf_frames * _channel_count];
 	_buf_frame_size = k_reader_buf_frames;
 
 	read_more_data_from_file();
@@ -79,9 +79,9 @@ void FileReader::read_more_data_from_file()
 	size_t samples_read = 0;
 	// read N samples from the file
 	if (_impl->_wav)
-		samples_read = drwav_read_f32(_impl->_wav, samples_to_read, _buf_interleaved);
+		samples_read = drwav_read_f32(_impl->_wav, samples_to_read, _buf_interleaved_f32);
 	else if (_impl->_flac)
-		samples_read = drflac_read_pcm_frames_f32(_impl->_flac, samples_to_read, _buf_interleaved);
+		samples_read = drflac_read_pcm_frames_f32(_impl->_flac, samples_to_read, _buf_interleaved_f32);
 	else
 		_did_final_clear = true; // unexpected case
 
@@ -94,7 +94,7 @@ void FileReader::read_more_data_from_file()
 
 	// clear rest of buffer
 	for (; samples_read < samples_to_read; ++samples_read)
-		_buf_interleaved[samples_read] = 0;
+		_buf_interleaved_f32[samples_read] = 0;
 
 }
 
@@ -102,5 +102,5 @@ void FileReader::read_more_data_from_file()
 FileReader::~FileReader()
 {
 	delete _impl;
-	drwav_free((void*)_buf_interleaved);
+	delete [] _buf_interleaved_f32;
 }

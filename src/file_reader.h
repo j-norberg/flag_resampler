@@ -22,7 +22,7 @@ private:
 	FileReaderImpl* _impl;
 
 	// a buffer
-	float* _buf_interleaved = nullptr;
+	float* _buf_interleaved_f32 = nullptr;
 	bool _did_final_clear = false; // if buffer is fully cleared because we read past the end
 
 	int _sample_rate = 44100;
@@ -36,7 +36,7 @@ private:
 	FileReader(const FileReader&); // non construction-copyable
 	FileReader& operator=(const FileReader&); // non copyable
 
-	inline void get_next_internal(float* buf_interleaved)
+	inline void get_next_internal(double* buf_interleaved)
 	{
 		if (_frame_index >= _buf_frame_size)
 		{
@@ -48,7 +48,8 @@ private:
 		int64_t read_index = _frame_index * _channel_count;
 		for (int i = 0; i < _channel_count; ++i)
 		{
-			buf_interleaved[i] = _buf_interleaved[read_index + i];
+			// doing conversion here
+			buf_interleaved[i] = (double)_buf_interleaved_f32[read_index + i];
 		}
 
 		++_frame_index;
@@ -80,7 +81,7 @@ public:
 
 	void read_more_data_from_file();
 
-	inline void get_next(float* buf_interleaved, int64_t frame_count)
+	inline void get_next(double* buf_interleaved, int64_t frame_count)
 	{
 		// fixme can in theory be faster
 		// basically just a memcpy until the end of the buffer
