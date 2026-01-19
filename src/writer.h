@@ -15,6 +15,7 @@ public:
 
 	enum OutFormat
 	{
+		eFmtDouble,
 		eFmtFloat,
 		eFmtInt24Dithered,
 		eFmtInt16Dithered

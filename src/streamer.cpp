@@ -571,7 +571,9 @@ enum
 
 ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* input)
 {
-	int filter_1_half_len = 640 + up * 460; // does this make sense?
+//	int filter_1_half_len = 640 + up * 460; // does this make sense?
+//	int filter_1_half_len = 1280 + up * 920; // try double filter
+	int filter_1_half_len = 1500 + up * 1000;
 	int filter_1_len = filter_1_half_len * 2 + 1;
 	int filter_2_len = filter_1_len * 2 + 1;
 
@@ -613,7 +615,7 @@ ISampleProducer* streamer_factory(ISampleProducer* input, int sr_out)
 	int sr_in = input->get_sample_rate();
 
 	// fixme bw can be input
-	double bw = 0.99f;
+	double bw = 0.999f;
 	if (sr_out < sr_in)
 		bw *= (double)sr_out / (double)sr_in;
 

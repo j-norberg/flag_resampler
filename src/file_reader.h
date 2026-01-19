@@ -10,6 +10,8 @@ struct FileReaderImpl;
 // Represents an audio - stream
 class FileReader : public ISampleProducer
 {
+	enum { k_reader_buf_frames = 4 * 1024 * 1024 };
+
 public:
 
 	enum ErrorCode
@@ -22,13 +24,13 @@ private:
 	FileReaderImpl* _impl;
 
 	// a buffer
-	float* _buf_interleaved_f32 = nullptr;
+	double* _buf_interleaved_f64 = nullptr;
 	bool _did_final_clear = false; // if buffer is fully cleared because we read past the end
+	double* _last_frame_f64 = nullptr;
 
 	int _sample_rate = 44100;
 	int _channel_count = 1;
 
-	int64_t _buf_frame_size = 0;
 	int64_t _total_frame_size = 0;
 	int64_t _frame_index = 0;
 	ErrorCode _error_code = eOk;
@@ -38,7 +40,7 @@ private:
 
 	inline void get_next_internal(double* buf_interleaved)
 	{
-		if (_frame_index >= _buf_frame_size)
+		if (_frame_index >= k_reader_buf_frames)
 		{
 			// if buffered file, read more and restart from start of buffer
 			read_more_data_from_file();
@@ -48,8 +50,7 @@ private:
 		int64_t read_index = _frame_index * _channel_count;
 		for (int i = 0; i < _channel_count; ++i)
 		{
-			// doing conversion here
-			buf_interleaved[i] = (double)_buf_interleaved_f32[read_index + i];
+			buf_interleaved[i] = _buf_interleaved_f64[read_index + i];
 		}
 
 		++_frame_index;
@@ -57,7 +58,7 @@ private:
 
 	inline void skip_next_internal()
 	{
-		if (_frame_index >= _buf_frame_size)
+		if (_frame_index >= k_reader_buf_frames)
 		{
 			read_more_data_from_file();
 			_frame_index = 0;

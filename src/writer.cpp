@@ -103,6 +103,9 @@ int FormatToBitsPerSample(Writer::OutFormat fmt)
 	case Writer::eFmtFloat:
 		return 32;
 
+	case Writer::eFmtDouble:
+		return 64;
+
 	default:
 		break;
 	}
@@ -121,6 +124,7 @@ int FormatToWavFormat(Writer::OutFormat fmt)
 		return DR_WAVE_FORMAT_PCM;
 
 	case Writer::eFmtFloat:
+	case Writer::eFmtDouble:
 		return DR_WAVE_FORMAT_IEEE_FLOAT;
 
 	default:
@@ -141,6 +145,7 @@ double* allocate_dither_noise(Writer::OutFormat fmt, int64_t frame_count)
 
 	switch (fmt)
 	{
+	case Writer::eFmtDouble:
 	case Writer::eFmtFloat:
 		return nullptr;
 
@@ -198,6 +203,9 @@ Writer::Writer(const char* file_name, int64_t total_frame_count, ISampleProducer
 	// allocate quantizer-buffer
 	switch (fmt)
 	{
+	case Writer::eFmtDouble:
+		break;
+
 	case Writer::eFmtFloat:
 		_buf_interleaved_quantized = new uint8_t[k_writer_buf_frames * channel_count * sizeof(float)];
 		break;
@@ -254,9 +262,17 @@ bool Writer::update()
 	//
 	int channel_count = _sample_producer->get_channel_count();
 
+	// by default always use the converted buffer
+	void* buffer_to_use = (void*)_buf_interleaved_quantized;
+
 	// straight write, alt. quantize and write
 	switch (_fmt)
 	{
+	case Writer::eFmtDouble:
+		// if double we're already good
+		buffer_to_use = (void*)_buf_interleaved_f64;
+		break;
+
 	case Writer::eFmtFloat:
 		{
 			// double -> float
@@ -313,7 +329,7 @@ bool Writer::update()
 	}
 
 	// write buffer
-	drwav_uint64 dummy_for_now = drwav_write(_wav, frame_count * channel_count, _buf_interleaved_quantized);
+	drwav_uint64 dummy_for_now = drwav_write(_wav, frame_count * channel_count, buffer_to_use);
 	(void)dummy_for_now; // fixme check for issues
 
 	// return

@@ -33,9 +33,10 @@ flag_src.exe --input infile.wav --output outfile.wav --sample_rate 44100 --forma
 -r / --sample_rate followed by desired sample rate (for instance 44100, 48000, 96000)
 
 -f / --format are one of these:
-16 = 16 bit dithered
-24 = 24 bit dithered
-f32 = 32 bit float (this is the default)
+16 = 16 bit dithered (useful for CD)
+24 = 24 bit dithered (useful for DVD/Blu-ray)
+f32 = 32 bit IEEE float (this is the default)
+f64 = 64 bit IEEE float (this is the best quality)
 )";
 
 // fixme support for reading 64bits files? 
@@ -145,7 +146,7 @@ bool handle_flag(Options& o, int argc, const char** argv, int& index)
 
 	if (arg == "-f" || arg == "--format")
 	{
-		const char* format_error_message = "error: -f should be followed by format (16, 24, f32)\n";
+		const char* format_error_message = "error: -f should be followed by format (16, 24, f32, f64)\n";
 		const char* fmt_str = next_arg(argc, argv, index, format_error_message);
 		if (fmt_str == nullptr)
 			return false;
@@ -165,6 +166,12 @@ bool handle_flag(Options& o, int argc, const char** argv, int& index)
 		if (0 == strcmp(fmt_str, "f32"))
 		{
 			o._format = Writer::eFmtFloat;
+			return true;
+		}
+
+		if (0 == strcmp(fmt_str, "f64"))
+		{
+			o._format = Writer::eFmtDouble;
 			return true;
 		}
 
