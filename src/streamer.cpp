@@ -222,9 +222,7 @@ struct StreamerUpT : ISampleProducer
 		pre_fill_oss_buffer();
 
 		// pre-feed to counteract internal latency
-		// fixme exactly where does this come from?
-		const int kInterpolatedSamplerHalf = 4;
-		int pre_feed = (_filter_size / 2) - kInterpolatedSamplerHalf;
+		int pre_feed = (_filter_size / 2);
 		skip_next(pre_feed);
 	}
 
@@ -583,25 +581,15 @@ struct InterpolatedSampler : ISampleProducer
 };
 
 
-void create_filter(double* out_kernel_buffer, int half_len, int kernel_len, double bw, double up)
+void create_filter(double* out_kernel_buffer, int len1, int kernel_len, int transform_size, double bw, double up)
 {
 	// create initial filter
-	int len1 = 1 + half_len * 2;
-	int len2 = 1 + len1 * 2;
-
-	// pot (power of two)
-	int transform_size = 1024;
-	while (transform_size < len2)
-		transform_size <<= 1;
-
 	double transform_recip = 1.0 / transform_size;
-
-	assert(len2 == kernel_len);
 
 	double* filter = (double*)pffftd_aligned_malloc(transform_size * sizeof(double));
 
 	double scale_len = bw / up;
-	double scale_amp = bw / sqrt((double)up);
+	double scale_amp = bw / sqrt(up);
 	create_windowed_sinc(filter, len1, scale_len, scale_amp);
 	int zero_count = (transform_size - len1);
 
@@ -617,11 +605,10 @@ void create_filter(double* out_kernel_buffer, int half_len, int kernel_len, doub
 	pffftd_transform(fft, filter, buf_freq2, buf_work, PFFFTD_FORWARD);
 
 	// create a second sligtly lower (maybe switch back to pure self convolve)
-	scale_len = (bw * 0.999) / up;
-	scale_amp = (bw * 0.999) / sqrt((double)up);
+	scale_len = (bw * 0.998) / up;
+	scale_amp = (bw * 0.998) / sqrt(up);
 	create_windowed_sinc(filter, len1, scale_len, scale_amp);
 	pffftd_transform(fft, filter, buf_freq, buf_work, PFFFTD_FORWARD);
-
 	pffftd_zconvolve_no_accumulate(fft, buf_freq2, buf_freq, buf_freq, transform_recip); // convolve
 	pffftd_transform(fft, buf_freq, out_kernel_buffer, buf_work, PFFFTD_BACKWARD);
 
@@ -664,7 +651,7 @@ ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* inpu
 	double* filter_kernel = (double*)pffftd_aligned_malloc(k_transform_len * sizeof(double)); // filter_kernel is only used in init
 	memset(filter_kernel, 0, k_transform_len * sizeof(double));
 
-	create_filter(filter_kernel, filter_1_half_len, filter_2_len, bw, up );
+	create_filter(filter_kernel, filter_1_len, filter_2_len, k_transform_len, bw, up );
 
 	ISampleProducer* upsampler = new StreamerUpT<k_transform_len>(filter_kernel, filter_2_len, up, input);
 	pffftd_aligned_free(filter_kernel); // filter_kernel is only used in init
