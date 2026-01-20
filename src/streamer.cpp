@@ -619,6 +619,19 @@ void create_filter(double* out_kernel_buffer, int len1, int kernel_len, int tran
 	pffftd_aligned_free(filter);
 }
 
+void normalize_filter(double* filter_kernel, int transform_len, double n)
+{
+	double sum = 0.0;
+	for (int i = 0; i < transform_len; ++i)
+		sum += filter_kernel[i];
+
+	double mul = n / sum;
+	printf("mul=%g\n", mul);
+
+	for (int i = 0; i < transform_len; ++i)
+		filter_kernel[i] *= mul;
+
+}
 
 
 
@@ -652,6 +665,7 @@ ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* inpu
 	memset(filter_kernel, 0, k_transform_len * sizeof(double));
 
 	create_filter(filter_kernel, filter_1_len, filter_2_len, k_transform_len, bw, up );
+	normalize_filter(filter_kernel, k_transform_len, up);
 
 	ISampleProducer* upsampler = new StreamerUpT<k_transform_len>(filter_kernel, filter_2_len, up, input);
 	pffftd_aligned_free(filter_kernel); // filter_kernel is only used in init
