@@ -7,7 +7,7 @@
 
 // Write to a large-ish buffer before calling fwrite
 // also this is how much dither noise is created and looped
-enum { k_writer_buf_frames = 4 * 1024 * 1024 };
+enum { k_writer_buf_frames = 128 * 1024 };
 
 
 

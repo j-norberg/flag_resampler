@@ -226,7 +226,15 @@ Options get_options(int argc, const char** argv)
 
 
 
-
+void put_progress(int pct)
+{
+	for (int i = 0; i < pct; ++i)
+		putchar('>');
+	for (int i = pct; i < 100; ++i)
+		putchar('.');
+	putchar('\r');
+	fflush(stdout);
+}
 
 
 // fixme maybe other tools, like generate sweeps?
@@ -315,12 +323,13 @@ int main(int argc, const char** argv)
 
 	while (writer.update())
 	{
-		// maybe print something every megabyte?
-		printf("\r%d%%", writer.get_progress_percent());
+		// fixme, make a progress-bar
+		put_progress(writer.get_progress_percent());
 	}
+	put_progress(100);
 
 	float elapsed1 = (float)t1.elapsed_ms();
-	printf("Conversion Done in %f ms\n", elapsed1);
+	printf("\nConversion Done in %f ms \n", elapsed1);
 
 	delete streamer; // deletes their input
 
