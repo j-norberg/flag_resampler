@@ -507,6 +507,7 @@ struct InterpolatedSampler : ISampleProducer
 		for (int c = 0; c < _channel_count; ++c)
 		{
 			buf_interleaved[write_index] = sample_32x_6p_5z(_bufs[c]._b, k_mask, _read_index, frac);
+//			buf_interleaved[write_index] = sample_16x_6p_5z(_bufs[c]._b, k_mask, _read_index, frac);
 			++write_index;
 		}
 	}
@@ -523,6 +524,7 @@ struct InterpolatedSampler : ISampleProducer
 			for (int c = 0; c < _channel_count; ++c)
 			{
 				buf_interleaved[write_index] = sample_32x_6p_5z(_bufs[c]._b, k_mask, _read_index, frac);
+//				buf_interleaved[write_index] = sample_16x_6p_5z(_bufs[c]._b, k_mask, _read_index, frac);
 				++write_index;
 			}
 
@@ -614,9 +616,9 @@ void create_filter(double* out_kernel_buffer, int half_len, int kernel_len, doub
 	PFFFTD_Setup* fft = pffftd_new_setup(transform_size, PFFFTD_REAL);
 	pffftd_transform(fft, filter, buf_freq2, buf_work, PFFFTD_FORWARD);
 
-	// create a second sligtly lower
-	scale_len = (bw * 0.997) / up;
-	scale_amp = (bw * 0.997) / sqrt((double)up);
+	// create a second sligtly lower (maybe switch back to pure self convolve)
+	scale_len = (bw * 0.999) / up;
+	scale_amp = (bw * 0.999) / sqrt((double)up);
 	create_windowed_sinc(filter, len1, scale_len, scale_amp);
 	pffftd_transform(fft, filter, buf_freq, buf_work, PFFFTD_FORWARD);
 
@@ -640,7 +642,7 @@ void create_filter(double* out_kernel_buffer, int half_len, int kernel_len, doub
 
 enum
 {
-	k_bits = 19,
+	k_bits = 20,
 	k_transform_len = 1 << k_bits
 };
 
@@ -648,7 +650,9 @@ ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* inpu
 {
 //	int filter_1_half_len = 640 + up * 460; // does this make sense?
 //	int filter_1_half_len = 1280 + up * 920; // try double filter
-	int filter_1_half_len = 2560 + up * 1840;
+//	int filter_1_half_len = 2560 + up * 1840;
+	int filter_1_half_len = 3200 + up * 2300;
+	
 	int filter_1_len = filter_1_half_len * 2 + 1;
 	int filter_2_len = filter_1_len * 2 + 1;
 
@@ -684,6 +688,7 @@ ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* inpu
 // 17 -> 128k
 // 18 -> 256k
 // 19 -> 512k
+// 20 -> 1M
 
 ISampleProducer* streamer_factory(ISampleProducer* input, int sr_out)
 {
