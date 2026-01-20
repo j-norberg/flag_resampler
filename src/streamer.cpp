@@ -217,15 +217,13 @@ struct StreamerUpT : ISampleProducer
 
 		_channels_buf.resize(_channel_count);
 
-
-		// read first frame and fill OSS structs with the first frame
+		// peek first frame and fill OSS structs with the first frame
 		// to not create a "snap" from zero to first frame
 		pre_fill_oss_buffer();
-		const int kFirstFrame = 2;
 
 		// pre-feed to counteract internal latency
 		const int kInterpolatedSamplerHalf = 3;
-		int pre_feed = (_filter_size / 2) - kInterpolatedSamplerHalf - kFirstFrame;
+		int pre_feed = (_filter_size / 2) - kInterpolatedSamplerHalf;
 		skip_next(pre_feed);
 	}
 
@@ -241,7 +239,7 @@ struct StreamerUpT : ISampleProducer
 	inline void pre_fill_oss_buffer()
 	{
 		// get one single (interleaved) frame for all channels
-		_input->get_next(_channels_buf.data(), 1);
+		_input->peek(_channels_buf.data());
 
 		// 1. de-interleave
 		// 2. zero-padding
@@ -302,6 +300,16 @@ struct StreamerUpT : ISampleProducer
 
 		for (int c = 0; c < _channel_count; ++c)
 			_oss[c].convolve();
+	}
+
+	void peek(double* buf_interleaved) override
+	{
+		int write_index = 0;
+		for (int c = 0; c < _channel_count; ++c)
+		{
+			buf_interleaved[write_index] = _oss[c].read(_out_index);
+			++write_index;
+		}
 	}
 
 	void get_next(double* buf_interleaved, int64_t frame_count) override
@@ -381,6 +389,11 @@ struct TrivialDecimator : ISampleProducer
 
 	int get_sample_rate() override { return _out_sr; };
 	int get_channel_count() override { return _channel_count; }
+
+	void peek(double* buf_interleaved) override
+	{
+		_input->peek(buf_interleaved);
+	}
 
 	void get_next(double* buf_interleaved, int64_t frame_count) override
 	{
@@ -479,6 +492,21 @@ struct InterpolatedSampler : ISampleProducer
 			_input->get_next(_channel_buffer.data(), 1);
 			for (int c = 0; c < _channel_count; ++c)
 				_bufs[c]._b[ofs+i] = _channel_buffer[c];
+		}
+	}
+
+	void peek(double* buf_interleaved)
+	{
+		int write_index = 0;
+
+		// calculate frac (common for all channels)
+		double frac = (double)_read_index_frac * _read_index_frac_limit_recip;
+
+		// write interleaved
+		for (int c = 0; c < _channel_count; ++c)
+		{
+			buf_interleaved[write_index] = sample_32x_6p_5z(_bufs[c]._b, k_mask, _read_index, frac);
+			++write_index;
 		}
 	}
 
@@ -583,13 +611,13 @@ void create_filter(double* out_kernel_buffer, int half_len, int kernel_len, doub
 	double* buf_freq2 = (double*)pffftd_aligned_malloc(transform_size * sizeof(double));
 
 	PFFFTD_Setup* fft = pffftd_new_setup(transform_size, PFFFTD_REAL);
-	pffftd_transform(fft, filter, buf_freq, buf_work, PFFFTD_FORWARD);
+	pffftd_transform(fft, filter, buf_freq2, buf_work, PFFFTD_FORWARD);
 
 	// create a second sligtly lower
-	scale_len = (bw * 0.999) / up;
-	scale_amp = (bw * 0.999) / sqrt((double)up);
+	scale_len = (bw * 0.997) / up;
+	scale_amp = (bw * 0.997) / sqrt((double)up);
 	create_windowed_sinc(filter, len1, scale_len, scale_amp);
-	pffftd_transform(fft, filter, buf_freq2, buf_work, PFFFTD_FORWARD);
+	pffftd_transform(fft, filter, buf_freq, buf_work, PFFFTD_FORWARD);
 
 	pffftd_zconvolve_no_accumulate(fft, buf_freq2, buf_freq, buf_freq, transform_recip); // convolve
 	pffftd_transform(fft, buf_freq, out_kernel_buffer, buf_work, PFFFTD_BACKWARD);
@@ -619,7 +647,7 @@ ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* inpu
 {
 //	int filter_1_half_len = 640 + up * 460; // does this make sense?
 //	int filter_1_half_len = 1280 + up * 920; // try double filter
-	int filter_1_half_len = 1500 + up * 1000;
+	int filter_1_half_len = 2560 + up * 1840;
 	int filter_1_len = filter_1_half_len * 2 + 1;
 	int filter_2_len = filter_1_len * 2 + 1;
 

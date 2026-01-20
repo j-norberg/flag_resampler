@@ -282,8 +282,8 @@ int main(int argc, const char** argv)
 
 	printf("INPUT: rate=%d, frames=%lld, seconds=%.3f, channel-count=%d\n", in_sample_rate, in_frame_count, in_seconds, in_channel_count);
 
-	// calculate
-	int64_t out_frame_count = (s.out_sr * in_frame_count) / in_sample_rate;
+	// calculate out-file samples, round to closest
+	int64_t out_frame_count = (s.out_sr * in_frame_count + (in_sample_rate/2)) / in_sample_rate;
 
 	printf("OUTPUT: rate=%d, frames=%lld\n", s.out_sr, out_frame_count);
 

@@ -82,6 +82,22 @@ public:
 
 	void read_more_data_from_file();
 
+	inline void peek(double* buf_interleaved) override
+	{
+		if (_frame_index >= k_reader_buf_frames)
+		{
+			// if buffered file, read more and restart from start of buffer
+			read_more_data_from_file();
+			_frame_index = 0;
+		}
+
+		int64_t read_index = _frame_index * _channel_count;
+		for (int i = 0; i < _channel_count; ++i)
+		{
+			buf_interleaved[i] = _buf_interleaved_f64[read_index + i];
+		}
+	}
+
 	inline void get_next(double* buf_interleaved, int64_t frame_count)
 	{
 		// fixme can in theory be faster
