@@ -222,7 +222,8 @@ struct StreamerUpT : ISampleProducer
 		pre_fill_oss_buffer();
 
 		// pre-feed to counteract internal latency
-		const int kInterpolatedSamplerHalf = 3;
+		// fixme exactly where does this come from?
+		const int kInterpolatedSamplerHalf = 4;
 		int pre_feed = (_filter_size / 2) - kInterpolatedSamplerHalf;
 		skip_next(pre_feed);
 	}
