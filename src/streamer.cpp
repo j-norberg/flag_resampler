@@ -605,8 +605,8 @@ void create_filter(double* out_kernel_buffer, int len1, int kernel_len, int tran
 	pffftd_transform(fft, filter, buf_freq2, buf_work, PFFFTD_FORWARD);
 
 	// create a second sligtly lower (maybe switch back to pure self convolve)
-	scale_len = (bw * 0.998) / up;
-	scale_amp = (bw * 0.998) / sqrt(up);
+	scale_len = (bw * 0.999) / up;
+	scale_amp = (bw * 0.999) / sqrt(up);
 	create_windowed_sinc(filter, len1, scale_len, scale_amp);
 	pffftd_transform(fft, filter, buf_freq, buf_work, PFFFTD_FORWARD);
 	pffftd_zconvolve_no_accumulate(fft, buf_freq2, buf_freq, buf_freq, transform_recip); // convolve
@@ -639,10 +639,22 @@ void normalize_filter(double* filter_kernel, int transform_len, double n)
 
 
 
+// 11 -> 2048
+// 12 -> 4096
+// 13 -> 8192
+// 14 -> 16k
+// 15 -> 32k
+// 16 -> 64k
+// 17 -> 128k
+// 18 -> 256k
+// 19 -> 512k
+// 20 -> 1M
+// 21 -> 2M
+// 22 -> 4M
 
 enum
 {
-	k_bits = 20,
+	k_bits = 22,
 	k_transform_len = 1 << k_bits
 };
 
@@ -680,16 +692,6 @@ ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* inpu
 
 
 
-// 11 -> 2048
-// 12 -> 4096
-// 13 -> 8192
-// 14 -> 16k
-// 15 -> 32k
-// 16 -> 64k
-// 17 -> 128k
-// 18 -> 256k
-// 19 -> 512k
-// 20 -> 1M
 
 ISampleProducer* streamer_factory(ISampleProducer* input, int sr_out)
 {
