@@ -7,7 +7,7 @@
 // Olli Niemitalo in October 2001.
 
 // only save the HQ one. Also changed types to double
-inline double sample_16x_6p_5z(double* buf, int mask, int index, double frac)
+inline double sample_16x_6p_5z(const double* buf, int mask, int index, double frac)
 {
 	double y0 = buf[(index + 0) & mask];
 	double y1 = buf[(index + 1) & mask];
@@ -32,7 +32,7 @@ inline double sample_16x_6p_5z(double* buf, int mask, int index, double frac)
 	return ((((c5 * z + c4) * z + c3) * z + c2) * z + c1) * z + c0;
 }
 
-inline double sample_32x_6p_5z(double* buf, int mask, int index, double frac)
+inline double sample_32x_6p_5z(const double* buf, int mask, int index, double frac)
 {
 	double y0 = buf[(index + 0) & mask];
 	double y1 = buf[(index + 1) & mask];

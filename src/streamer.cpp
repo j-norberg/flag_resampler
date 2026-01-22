@@ -376,9 +376,6 @@ struct TrivialDecimator : ISampleProducer
 
 		_read_ttl = 0;
 		_skipFrames = multiplier - 1;
-
-		// match latency to interpolated sampler
-		_input->skip_next(3);
 	}
 
 	~TrivialDecimator()
@@ -522,7 +519,6 @@ struct InterpolatedSampler : ISampleProducer
 			for (int c = 0; c < _channel_count; ++c)
 			{
 				buf_interleaved[write_index] = sample_32x_6p_5z(_bufs[c]._b, k_mask, _read_index, frac);
-//				buf_interleaved[write_index] = sample_16x_6p_5z(_bufs[c]._b, k_mask, _read_index, frac);
 				++write_index;
 			}
 
@@ -626,7 +622,8 @@ void normalize_filter(double* filter_kernel, int transform_len, double n)
 		sum += filter_kernel[i];
 
 	double mul = n / sum;
-	printf("mul=%g\n", mul);
+	// uint64_t* mul_p = (uint64_t*)&mul;
+	// printf("mul=%g %llx\n", mul, *mul_p);
 
 	for (int i = 0; i < transform_len; ++i)
 		filter_kernel[i] *= mul;
@@ -651,6 +648,7 @@ void normalize_filter(double* filter_kernel, int transform_len, double n)
 // 20 -> 1M
 // 21 -> 2M
 // 22 -> 4M
+// 23 -> 8M
 
 enum
 {
@@ -661,17 +659,22 @@ enum
 ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* input)
 {
 //	int filter_1_half_len = 640 + up * 460; // does this make sense?
-//	int filter_1_half_len = 1280 + up * 920; // try double filter
-//	int filter_1_half_len = 2560 + up * 1840;
 	int filter_1_half_len = 3200 + up * 2300;
 	
+	// clamp
+	const int limit = 30000;
+	if (filter_1_half_len > limit)
+		filter_1_half_len = limit;
+
 	int filter_1_len = filter_1_half_len * 2 + 1;
 	int filter_2_len = filter_1_len * 2 + 1;
 
 	// fixme this should go away
-	printf("\nOSS transform=%d, filter=%d, inbuf=%d\n", k_transform_len, filter_2_len, (k_transform_len - filter_2_len));
+	int inbuf_len = k_transform_len - filter_2_len;
+	printf("\nOSS transform-len=%dK, filter-len=%dK, inbuf-len=%dK\n", k_transform_len/1024, filter_2_len / 1024, inbuf_len / 1024);
 
-	assert(k_transform_len > (filter_2_len + 1024));
+	// don't even run if the inbuf is below N
+	assert(inbuf_len > 100000);
 
 	double* filter_kernel = (double*)pffftd_aligned_malloc(k_transform_len * sizeof(double)); // filter_kernel is only used in init
 	memset(filter_kernel, 0, k_transform_len * sizeof(double));
@@ -703,11 +706,12 @@ ISampleProducer* streamer_factory(ISampleProducer* input, int sr_out)
 		bw *= (double)sr_out / (double)sr_in;
 
 	// try and find integer ratio (too high becomes very expensive)
-	for (int up = 1; up < 32; ++up)
+	// 147 / 320
+	for (int up = 1; up < 148; ++up)
 	{
-		for (int decimate = 1; decimate < 256; ++decimate)
+		for (int decimate = 1; decimate < 513; ++decimate)
 		{
-			if (sr_out * decimate == sr_in * up)
+			if ( (sr_out * decimate) == (sr_in * up))
 			{
 				printf("Rational: %d / %d\n", up, decimate);
 				// found rational, very cool, avoids interpolation
@@ -716,7 +720,8 @@ ISampleProducer* streamer_factory(ISampleProducer* input, int sr_out)
 		}
 	}
 
-	return new InterpolatedSampler(sr_out, make_integer_upsampler(32, bw, input) );
+	return new InterpolatedSampler(sr_out, make_integer_upsampler(128, bw, input) );
+//	return new InterpolatedSampler(sr_out, make_integer_upsampler(32, bw, input));
 }
 
 

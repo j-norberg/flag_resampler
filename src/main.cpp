@@ -329,7 +329,10 @@ int main(int argc, const char** argv)
 	put_progress(100);
 
 	float elapsed1 = (float)t1.elapsed_ms();
-	printf("\nConversion Done in %f ms \n", elapsed1);
+	if (elapsed1 > 1000.0f)
+		printf("\nConversion Done in %f s \n", elapsed1/1000.0f);
+	else
+		printf("\nConversion Done in %f ms \n", elapsed1);
 
 	delete streamer; // deletes their input
 
