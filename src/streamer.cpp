@@ -222,7 +222,7 @@ struct StreamerUpT : ISampleProducer
 		pre_fill_oss_buffer();
 
 		// pre-feed to counteract internal latency
-		int pre_feed = (_filter_size / 2);
+		int pre_feed = (_filter_size / 2) - 1;
 		skip_next(pre_feed);
 	}
 
@@ -615,18 +615,39 @@ void create_filter(double* out_kernel_buffer, int len1, int kernel_len, int tran
 	pffftd_aligned_free(filter);
 }
 
-void normalize_filter(double* filter_kernel, int transform_len, double n)
+// maybe normalize each phase?
+// or just the whole kernel
+void normalize_filter(double* filter_kernel, int transform_len, int up)
 {
-	double sum = 0.0;
-	for (int i = 0; i < transform_len; ++i)
-		sum += filter_kernel[i];
+	for (int phase = 0; phase < up; ++phase)
+	{
+		double sum = 0.0;
+		for (int i = phase; i < transform_len; i+=up)
+			sum += filter_kernel[i];
 
-	double mul = n / sum;
-	// uint64_t* mul_p = (uint64_t*)&mul;
-	// printf("mul=%g %llx\n", mul, *mul_p);
+		double mul = 1.0 / sum;
+		
+//		uint64_t* mul_p = (uint64_t*)&mul;
+//		printf("phase=%i/%i, mul=%g %llx\n", phase, up, mul, *mul_p);
 
-	for (int i = 0; i < transform_len; ++i)
-		filter_kernel[i] *= mul;
+		for (int i = phase; i < transform_len; i += up)
+			filter_kernel[i] *= mul;
+	}
+
+	// finally full normalize
+	{
+		double sum = 0.0;
+		for (int i = 0; i < transform_len; ++i)
+			sum += filter_kernel[i];
+
+		double mul = (double)up / sum;
+
+//		uint64_t* mul_p = (uint64_t*)&mul;
+//		printf("FINAL, mul=%g %llx\n", mul, *mul_p);
+
+		for (int i = 0; i < transform_len; ++i)
+			filter_kernel[i] *= mul;
+	}
 
 }
 
@@ -652,16 +673,17 @@ void normalize_filter(double* filter_kernel, int transform_len, double n)
 
 enum
 {
-	k_bits = 22,
+	k_bits = 21,
 	k_transform_len = 1 << k_bits
 };
 
 ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* input)
 {
 //	int filter_1_half_len = 640 + up * 460; // does this make sense?
-	int filter_1_half_len = 3200 + up * 2300;
+	int filter_1_half_len = 3000 + up * 2000;
 	
 	// clamp
+//	const int limit = 300000;
 	const int limit = 30000;
 	if (filter_1_half_len > limit)
 		filter_1_half_len = limit;
