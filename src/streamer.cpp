@@ -222,8 +222,11 @@ struct StreamerUpT : ISampleProducer
 		pre_fill_oss_buffer();
 
 		// pre-feed to counteract internal latency
-		int pre_feed = (_filter_size / 2) - 1;
-		pre_feed -= 3; // 3 is the latency of the interpolated decimator
+		int pre_feed = (_filter_size-1) / 2; // should get us to the center of the impulse
+		
+//		pre_feed -= 2; // 2 is the latency of the interpolated decimator
+		pre_feed -= 3; // 2 is the latency of the interpolated decimator
+
 		skip_next(pre_feed);
 	}
 
@@ -241,19 +244,20 @@ struct StreamerUpT : ISampleProducer
 		// get one single (interleaved) frame for all channels
 		_input->peek(_channels_buf.data());
 
-		// 1. de-interleave
-		// 2. zero-padding
+		// write backwords when pre-filling
+		// use temporary ttl
+		int pad_ttl = _up;
 
-		for (int i = 0; i < _inblock_size; ++i)
+		for (int i = _inblock_size - 1; i >= 0; --i)
 		{
-			if (_pad_ttl < 1)
+			if (pad_ttl < 1)
 			{
 				// populate oss-structs
 				for (int c = 0; c < _channel_count; ++c)
 					_oss[c].write(i, _channels_buf[c]);
 
 				// reset ttl
-				_pad_ttl = _up;
+				pad_ttl = _up;
 			}
 			else
 			{
@@ -262,11 +266,12 @@ struct StreamerUpT : ISampleProducer
 					_oss[c].write(i, 0);
 			}
 
-			--_pad_ttl;
+			--pad_ttl;
 		}
 
 		for (int c = 0; c < _channel_count; ++c)
 			_oss[c].convolve();
+
 	}
 
 	inline void fill_oss_buffer()
@@ -366,7 +371,6 @@ struct TrivialDecimator : ISampleProducer
 	int _channel_count;
 	int _out_sr;
 
-	int _read_ttl;
 	int _skipFrames;
 
 	TrivialDecimator(int multiplier, ISampleProducer* input)
@@ -375,11 +379,10 @@ struct TrivialDecimator : ISampleProducer
 		_channel_count = input->get_channel_count();
 		_out_sr = input->get_sample_rate() / multiplier;
 
-		_read_ttl = 0;
 		_skipFrames = multiplier - 1;
 
 		// match latency to interpolated sampler
-		_input->skip_next(3);
+		input->skip_next(2);
 	}
 
 	~TrivialDecimator()
@@ -397,6 +400,13 @@ struct TrivialDecimator : ISampleProducer
 
 	void get_next(double* buf_interleaved, int64_t frame_count) override
 	{
+		if (_skipFrames == 0)
+		{
+			// pass-through (common for integer-upscaling)
+			_input->get_next(buf_interleaved, frame_count);
+			return;
+		}
+
 		for (int i = 0; i < frame_count; ++i)
 		{
 			// read one frame
@@ -409,8 +419,8 @@ struct TrivialDecimator : ISampleProducer
 
 	void skip_next(int64_t frame_count) override
 	{
-		int64_t skip = frame_count * (_skipFrames + 1);
-		_input->skip_next(skip);
+		int64_t skip_frames = frame_count * (_skipFrames + 1);
+		_input->skip_next(skip_frames);
 	}
 
 };
@@ -424,13 +434,13 @@ struct InterpolatedSampler : ISampleProducer
 	int _out_sr;
 
 	enum {
-		k_bufs = 64,
+		k_bufs = 256, // interpolation only uses 6 samples 
 		k_mask = k_bufs - 1,
 		k_half = k_bufs >> 1
 	};
 
 	struct Buf {
-		double _b[k_bufs];
+		double _b[k_bufs] = { -0.99 }; // fixme should never be visited
 	};
 
 	std::vector<double> _channel_buffer;
@@ -457,15 +467,14 @@ struct InterpolatedSampler : ISampleProducer
 		_read_index_frac_limit_recip = 1.0f / (double)sr;
 
 		_channel_buffer.resize(_channel_count);
+
 		_bufs = new Buf[_channel_count];
 
-		// fill whole buffer
-		for (int i = 0 ; i < k_bufs ; ++i)
-		{
-			input->get_next(_channel_buffer.data(), 1);
-			for (int c = 0; c < _channel_count; ++c)
-				_bufs[c]._b[i] = _channel_buffer[c];
-		}
+		// fill full buffer with actual data
+		internal_fill_buffers(0);
+		internal_fill_buffers(k_half);
+
+		// note: induced 2 samples of latency
 	}
 
 	~InterpolatedSampler()
@@ -684,11 +693,11 @@ enum
 ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* input)
 {
 //	int filter_1_half_len = 640 + up * 460; // does this make sense?
-	int filter_1_half_len = 3200 + up * 2200;
+	int filter_1_half_len = 2200 + up * 2200;
 	
 	// clamp
 //	const int limit = 300000;
-	const int limit = 60000;
+	const int limit = 90000;
 	if (filter_1_half_len > limit)
 		filter_1_half_len = limit;
 
@@ -727,7 +736,7 @@ ISampleProducer* streamer_factory(ISampleProducer* input, int sr_out)
 	int sr_in = input->get_sample_rate();
 
 	// fixme bw can be input
-	double bw = 0.999f;
+	double bw = 0.998f;
 	if (sr_out < sr_in)
 		bw *= (double)sr_out / (double)sr_in;
 
@@ -742,6 +751,8 @@ ISampleProducer* streamer_factory(ISampleProducer* input, int sr_out)
 				printf("Rational: %d / %d\n", up, decimate);
 				// found rational, very cool, avoids interpolation
 				return new TrivialDecimator(decimate, make_integer_upsampler(up, bw, input));
+
+				// fixme, if decimate with 1, just pass-through instead... (deal with latency-compensation)
 			}
 		}
 	}
