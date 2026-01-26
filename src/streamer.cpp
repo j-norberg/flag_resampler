@@ -223,6 +223,7 @@ struct StreamerUpT : ISampleProducer
 
 		// pre-feed to counteract internal latency
 		int pre_feed = (_filter_size / 2) - 1;
+		pre_feed -= 3; // 3 is the latency of the interpolated decimator
 		skip_next(pre_feed);
 	}
 
@@ -376,6 +377,9 @@ struct TrivialDecimator : ISampleProducer
 
 		_read_ttl = 0;
 		_skipFrames = multiplier - 1;
+
+		// match latency to interpolated sampler
+		_input->skip_next(3);
 	}
 
 	~TrivialDecimator()
@@ -680,11 +684,11 @@ enum
 ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* input)
 {
 //	int filter_1_half_len = 640 + up * 460; // does this make sense?
-	int filter_1_half_len = 3000 + up * 2000;
+	int filter_1_half_len = 3200 + up * 2200;
 	
 	// clamp
 //	const int limit = 300000;
-	const int limit = 30000;
+	const int limit = 60000;
 	if (filter_1_half_len > limit)
 		filter_1_half_len = limit;
 
@@ -728,8 +732,8 @@ ISampleProducer* streamer_factory(ISampleProducer* input, int sr_out)
 		bw *= (double)sr_out / (double)sr_in;
 
 	// try and find integer ratio (too high becomes very expensive)
-	// 147 / 320
-	for (int up = 1; up < 148; ++up)
+	// should do 147 / 320 to suppoer 96 -> 44.1k
+	for (int up = 1; up < 32; ++up)
 	{
 		for (int decimate = 1; decimate < 513; ++decimate)
 		{
@@ -742,8 +746,7 @@ ISampleProducer* streamer_factory(ISampleProducer* input, int sr_out)
 		}
 	}
 
-	return new InterpolatedSampler(sr_out, make_integer_upsampler(128, bw, input) );
-//	return new InterpolatedSampler(sr_out, make_integer_upsampler(32, bw, input));
+	return new InterpolatedSampler(sr_out, make_integer_upsampler(32, bw, input));
 }
 
 
