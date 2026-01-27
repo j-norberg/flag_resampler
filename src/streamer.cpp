@@ -246,32 +246,37 @@ struct StreamerUpT : ISampleProducer
 
 		// write backwords when pre-filling
 		// use temporary ttl
-		int pad_ttl = _up;
+		int pad_ttl = _up - 1;
 
-		for (int i = _inblock_size - 1; i >= 0; --i)
+		// 
+		int loop_count = 1 + _filter_size / _inblock_size;
+		for (int loops = 0; loops < loop_count; ++loops)
 		{
-			if (pad_ttl < 1)
+			for (int i = _inblock_size - 1; i >= 0; --i)
 			{
-				// populate oss-structs
-				for (int c = 0; c < _channel_count; ++c)
-					_oss[c].write(i, _channels_buf[c]);
+				if (pad_ttl < 1)
+				{
+					// populate oss-structs
+					for (int c = 0; c < _channel_count; ++c)
+						_oss[c].write(i, _channels_buf[c]);
 
-				// reset ttl
-				pad_ttl = _up;
-			}
-			else
-			{
-				// zero-pad
-				for (int c = 0; c < _channel_count; ++c)
-					_oss[c].write(i, 0);
+					// reset ttl
+					pad_ttl = _up;
+				}
+				else
+				{
+					// zero-pad
+					for (int c = 0; c < _channel_count; ++c)
+						_oss[c].write(i, 0);
+				}
+
+				--pad_ttl;
 			}
 
-			--pad_ttl;
+			for (int c = 0; c < _channel_count; ++c)
+				_oss[c].convolve();
+
 		}
-
-		for (int c = 0; c < _channel_count; ++c)
-			_oss[c].convolve();
-
 	}
 
 	inline void fill_oss_buffer()
@@ -686,18 +691,17 @@ void normalize_filter(double* filter_kernel, int transform_len, int up)
 
 enum
 {
-	k_bits = 21,
+	k_bits = 20,
 	k_transform_len = 1 << k_bits
 };
 
 ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* input)
 {
 //	int filter_1_half_len = 640 + up * 460; // does this make sense?
-	int filter_1_half_len = 2200 + up * 2200;
+	int filter_1_half_len = 2000 + up * 2000;
 	
 	// clamp
-//	const int limit = 300000;
-	const int limit = 90000;
+	const int limit = 100000;
 	if (filter_1_half_len > limit)
 		filter_1_half_len = limit;
 
@@ -736,7 +740,7 @@ ISampleProducer* streamer_factory(ISampleProducer* input, int sr_out)
 	int sr_in = input->get_sample_rate();
 
 	// fixme bw can be input
-	double bw = 0.998f;
+	double bw = 0.999f;
 	if (sr_out < sr_in)
 		bw *= (double)sr_out / (double)sr_in;
 
