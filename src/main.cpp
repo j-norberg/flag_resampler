@@ -22,11 +22,11 @@ const char* USAGE_STRING =
 R"(---------------------------
 use like this:
 
-flag_src.exe -i infile.wav -o outfile.wav -r 44100 -f [16, 24, f32]
+flag_resampler.exe -i infile.wav -o outfile.wav -r 44100 -f [16, 24, f32]
 
 or:
 
-flag_src.exe --input infile.wav --output outfile.wav --sample_rate 44100 --format [16, 24, f32]
+flag_resampler.exe --input infile.wav --output outfile.wav --sample_rate 44100 --format [16, 24, f32]
 
 -i / --input is followed by a path to wave file
 -o / --output is followed by a path to wave file that will write to
@@ -38,8 +38,6 @@ flag_src.exe --input infile.wav --output outfile.wav --sample_rate 44100 --forma
 f32 = 32 bit IEEE float (this is the default)
 f64 = 64 bit IEEE float (this is the best quality)
 )";
-
-// fixme support for reading 64bits files? 
 
 class Timer
 {
@@ -316,16 +314,15 @@ int main(int argc, const char** argv)
 		return 0;
 	}
 
-	Writer writer(s.out_file.c_str(), out_frame_count, streamer, s._format);
+	int64_t hacked_frames = out_frame_count + 50000; // fixme
+	Writer writer(s.out_file.c_str(), hacked_frames, streamer, s._format);
 
 	Timer t1;
 	t1.reset();
 
 	while (writer.update())
-	{
-		// fixme, make a progress-bar
 		put_progress(writer.get_progress_percent());
-	}
+
 	put_progress(100);
 
 	float elapsed1 = (float)t1.elapsed_ms();

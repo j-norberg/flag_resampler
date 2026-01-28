@@ -181,6 +181,9 @@ Writer::Writer(const char* file_name, int64_t total_frame_count, ISampleProducer
 
 	_sample_producer = input;
 
+	// throw away all remaining padding
+	input->skip_next(input->get_padding_frame_count());
+
 	// open the file here
 	drwav_data_format format;
 	format.container = drwav_container_riff;

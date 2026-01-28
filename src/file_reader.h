@@ -10,7 +10,11 @@ struct FileReaderImpl;
 // Represents an audio - stream
 class FileReader : public ISampleProducer
 {
-	enum { k_reader_buf_frames = 4 * 1024 * 1024 };
+	enum {
+		k_buf_frames = 4 * 1024, // the longer this is the longer the "prediction" is
+		k_mask = k_buf_frames-1,
+		k_half = k_buf_frames / 2
+	};
 
 public:
 
@@ -23,10 +27,11 @@ public:
 private:
 	FileReaderImpl* _impl;
 
-	// a buffer
-	double* _buf_interleaved_f64 = nullptr;
-	bool _did_final_clear = false; // if buffer is fully cleared because we read past the end
-	double* _last_frame_f64 = nullptr;
+	double* _buf_interleaved_f64 = nullptr;	// a buffer
+
+	// when the file is fully read we use the last samples and predict some more
+	double* _buf_predicted_tail = nullptr;
+	int64_t _tail_frame_index = 0; // points into the tail-buffer, after it's exhausted, fill w. zero
 
 	int _sample_rate = 44100;
 	int _channel_count = 1;
@@ -40,17 +45,18 @@ private:
 
 	inline void get_next_internal(double* buf_interleaved)
 	{
-		if (_frame_index >= k_reader_buf_frames)
+		if (_frame_index >= k_buf_frames)
 		{
 			// if buffered file, read more and restart from start of buffer
-			read_more_data_from_file();
+			read_data_from_file(0, k_buf_frames);
 			_frame_index = 0;
 		}
 
 		int64_t read_index = _frame_index * _channel_count;
 		for (int i = 0; i < _channel_count; ++i)
 		{
-			buf_interleaved[i] = _buf_interleaved_f64[read_index + i];
+			double v = _buf_interleaved_f64[read_index + i];
+			buf_interleaved[i] = v;
 		}
 
 		++_frame_index;
@@ -58,9 +64,9 @@ private:
 
 	inline void skip_next_internal()
 	{
-		if (_frame_index >= k_reader_buf_frames)
+		if (_frame_index >= k_buf_frames)
 		{
-			read_more_data_from_file();
+			read_data_from_file(0, k_buf_frames);
 			_frame_index = 0;
 		}
 
@@ -72,30 +78,18 @@ public:
 	FileReader(const char* file_name); // loads a whole file into memory
 
 	ErrorCode get_error_code() { return _error_code; };
-
-	int get_sample_rate() { return _sample_rate; }
-	int get_channel_count() { return _channel_count; }
-
 	int64_t get_frame_count() { return _total_frame_size; }
 
 	~FileReader();
 
-	void read_more_data_from_file();
+	void read_data_from_file(int frame_offset, int frame_count);
 
-	inline void peek(double* buf_interleaved) override
+	int get_sample_rate() override { return _sample_rate; }
+	int get_channel_count() override { return _channel_count; }
+
+	virtual int get_padding_frame_count() override
 	{
-		if (_frame_index >= k_reader_buf_frames)
-		{
-			// if buffered file, read more and restart from start of buffer
-			read_more_data_from_file();
-			_frame_index = 0;
-		}
-
-		int64_t read_index = _frame_index * _channel_count;
-		for (int i = 0; i < _channel_count; ++i)
-		{
-			buf_interleaved[i] = _buf_interleaved_f64[read_index + i];
-		}
+		return k_half; // always create half a buffer of prediction
 	}
 
 	inline void get_next(double* buf_interleaved, int64_t frame_count)
