@@ -430,6 +430,7 @@ struct InterpolatedSampler : ISampleProducer
 
 		// fill first half of buffer with actual data
 		internal_fill_buffers(0);
+		internal_fill_buffers(k_half);
 	}
 
 	~InterpolatedSampler()
@@ -631,16 +632,15 @@ void normalize_filter(double* filter_kernel, int transform_len, int up)
 
 enum
 {
-	k_bits = 16,
-//	k_bits = 20,
+	k_bits = 20,
 	k_transform_len = 1 << k_bits
 };
 
 ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* input)
 {
-//	int filter_1_half_len = 640 + up * 460; // does this make sense?
-//	int filter_1_half_len = 2000 + up * 2000;
-	int filter_1_half_len = 200 + up * 200;
+//	int filter_1_half_len = 200 + up * 200;
+//	int filter_1_half_len = 640 + up * 460;
+	int filter_1_half_len = 2000 + up * 2000;
 
 	// clamp
 	const int limit = 100000;

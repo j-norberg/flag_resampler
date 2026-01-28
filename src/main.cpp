@@ -314,8 +314,7 @@ int main(int argc, const char** argv)
 		return 0;
 	}
 
-	int64_t hacked_frames = out_frame_count + 50000; // fixme
-	Writer writer(s.out_file.c_str(), hacked_frames, streamer, s._format);
+	Writer writer(s.out_file.c_str(), out_frame_count, streamer, s._format);
 
 	Timer t1;
 	t1.reset();

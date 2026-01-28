@@ -81,6 +81,17 @@ struct ACValue
 // history_count = how many samples of history we have (starting at 0) counting to the past
 void predict(BufWriter& predicted, BufReader& history, int fill_count, int history_count)
 {
+#if 0
+	// force extending last sample
+	{
+		double v = history.read(0);
+		for (int i = 0; i < fill_count; ++i)
+			predicted.write(i, v);	// write
+
+		return;
+	}
+#endif
+
 	// limit based on a small value on a cd
 	double limit = 9.0 / 65000.0;
 
@@ -91,7 +102,7 @@ void predict(BufWriter& predicted, BufReader& history, int fill_count, int histo
 		fabs(history.read(2)) < limit
 		)
 	{
-		puts("linear prediction");
+		puts("Linear prediction");
 		double slope = history.read(0) - history.read(1);
 
 		double v = history.read(0);
@@ -103,7 +114,10 @@ void predict(BufWriter& predicted, BufReader& history, int fill_count, int histo
 			v *= 0.9;						// clamp v (pull to 0)
 			predicted.write(i,v);	// write
 		}
+		return;
 	}
+
+	puts("Autocorrelation");
 
 	// try autocorrelation?
 	// look at 4 samples care about the slopes a lot and the avg value a little
