@@ -1,3 +1,7 @@
+// jnorberg disable warnings
+#pragma warning( disable : 4255 )
+#pragma warning( disable : 5045 )
+
 /* Copyright (c) 2013  Julien Pommier ( pommier@modartt.com )
 
    Based on original fortran 77 code from FFTPACKv4 from NETLIB

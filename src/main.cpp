@@ -9,6 +9,11 @@
 #include "streamer.h"
 
 #include "memory_reader.h"
+
+#pragma warning( disable : 4514 ) // unref. inline
+#pragma warning( disable : 4820 ) // padding
+#pragma warning( disable : 5045 ) // spectre
+
 #include "file_reader.h"
 #include "writer.h"
 
@@ -22,15 +27,15 @@ const char* USAGE_STRING =
 R"(---------------------------
 use like this:
 
-flag_resampler.exe -i infile.wav -o outfile.wav -r 44100 -f [16, 24, f32]
+flag_resampler.exe -i infile.wav -o outfile.wav -r 44100 -f [16, 24, f32, f64]
 
 or:
 
-flag_resampler.exe --input infile.wav --output outfile.wav --sample_rate 44100 --format [16, 24, f32]
+flag_resampler.exe --input infile.wav --output outfile.wav --sample_rate 44100 --format [16, 24, f32, f64]
 
--i / --input is followed by a path to wave file
+-i / --input is followed by a path to wave/flac file
 -o / --output is followed by a path to wave file that will write to
--r / --sample_rate followed by desired sample rate (for instance 44100, 48000, 96000)
+-r / --sample_rate followed by desired sample rate (for instance 44100, 48000, 96000, 192000)
 
 -f / --format are one of these:
 16 = 16 bit dithered (useful for CD)
@@ -286,7 +291,7 @@ int main(int argc, const char** argv)
 	int in_sample_rate = reader->get_sample_rate();
 	double in_seconds = (double)in_frame_count / (double)in_sample_rate;
 
-	printf("INPUT: rate=%d, frames=%lld, seconds=%.3f, channel-count=%d\n", in_sample_rate, in_frame_count, in_seconds, in_channel_count);
+	printf("INPUT: channel-count=%d, rate=%d, frames=%lld (%.3fs)\n", in_channel_count, in_sample_rate, in_frame_count, in_seconds);
 
 	// calculate out-file samples, round to closest
 	int64_t out_frame_count = (s.out_sr * in_frame_count + (in_sample_rate/2)) / in_sample_rate;
@@ -298,7 +303,7 @@ int main(int argc, const char** argv)
 	// check special case
 	if (in_sample_rate == s.out_sr)
 	{
-		puts("sample-rates same, will still output file");
+		puts("note: sample-rates same, will still output file");
 		streamer = reader;
 	}
 	else
@@ -310,7 +315,7 @@ int main(int argc, const char** argv)
 	if (streamer == nullptr)
 	{
 		// issue?
-		puts("can not create converter?");
+		puts("error: can not create converter?");
 		return 0;
 	}
 
@@ -322,9 +327,10 @@ int main(int argc, const char** argv)
 	while (writer.update())
 		put_progress(writer.get_progress_percent());
 
+	float elapsed1 = (float)t1.elapsed_ms();
+
 	put_progress(100);
 
-	float elapsed1 = (float)t1.elapsed_ms();
 	if (elapsed1 > 1000.0f)
 		printf("\nConversion Done in %f s \n", elapsed1/1000.0f);
 	else

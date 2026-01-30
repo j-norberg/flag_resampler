@@ -1,9 +1,14 @@
-#include "sample_producer.h"
-
-#include "writer.h"
 
 #include <cstdlib>
 #include <cassert>
+
+#include "sample_producer.h"
+
+#pragma warning( disable : 4514 ) // unref. inline
+#pragma warning( disable : 4820 ) // padding
+#pragma warning( disable : 5045 ) // spectre
+
+#include "writer.h"
 
 // Write to a large-ish buffer before calling fwrite
 // also this is how much dither noise is created and looped
@@ -23,7 +28,7 @@ struct WhiteNoise
 	int next_int()
 	{
 		next = next * 1103515245 + 12345;
-		unsigned int v = next >> 16;
+		uint32_t v = (uint32_t)(next >> 16);
 		v &= WN_RM;
 		return (int)v;
 	}
@@ -90,7 +95,7 @@ inline void write_24(uint8_t* dest, int32_t q)
 	dest[2] = (qi >> 16) & 255;
 }
 
-int FormatToBitsPerSample(Writer::OutFormat fmt)
+uint32_t FormatToBitsPerSample(Writer::OutFormat fmt)
 {
 	switch (fmt)
 	{
@@ -112,10 +117,10 @@ int FormatToBitsPerSample(Writer::OutFormat fmt)
 
 	// error
 	assert(false);
-	return -1;
+	return 0;
 }
 
-int FormatToWavFormat(Writer::OutFormat fmt)
+uint32_t FormatToWavFormat(Writer::OutFormat fmt)
 {
 	switch (fmt)
 	{
@@ -133,7 +138,7 @@ int FormatToWavFormat(Writer::OutFormat fmt)
 
 	// error
 	assert(false);
-	return -1;
+	return 0;
 }
 
 double* allocate_dither_noise(Writer::OutFormat fmt, int64_t frame_count)
@@ -163,7 +168,7 @@ double* allocate_dither_noise(Writer::OutFormat fmt, int64_t frame_count)
 
 	// fixme, little optional notch around 4k? and a shelf at 10k?
 
-	dest = new double[frame_count];
+	dest = new double[(size_t)frame_count];
 	for (int64_t i = 0; i < frame_count; ++i)
 	{
 		dest[i] = (double)wn.next_triangle() * recip;
@@ -193,13 +198,13 @@ Writer::Writer(const char* file_name, int64_t total_frame_count, ISampleProducer
 
 	int channel_count = input->get_channel_count();
 
-	format.channels = channel_count;
-	format.sampleRate = input->get_sample_rate();
+	format.channels = (uint32_t)channel_count;
+	format.sampleRate = (uint32_t)input->get_sample_rate();
 
 	_wav = drwav_open_file_write(file_name, &format);
 	// fixme deal with write error
 
-	_buf_interleaved_f64 = new double[k_writer_buf_frames * channel_count];
+	_buf_interleaved_f64 = new double[(size_t)(k_writer_buf_frames * channel_count)];
 
 	_buf_interleaved_quantized = nullptr;
 
@@ -210,15 +215,15 @@ Writer::Writer(const char* file_name, int64_t total_frame_count, ISampleProducer
 		break;
 
 	case Writer::eFmtFloat:
-		_buf_interleaved_quantized = new uint8_t[k_writer_buf_frames * channel_count * sizeof(float)];
+		_buf_interleaved_quantized = new uint8_t[(size_t)(k_writer_buf_frames * channel_count * sizeof(float))];
 		break;
 
 	case Writer::eFmtInt16Dithered:
-		_buf_interleaved_quantized = new uint8_t[k_writer_buf_frames * channel_count * sizeof(short)];
+		_buf_interleaved_quantized = new uint8_t[(size_t)(k_writer_buf_frames * channel_count * sizeof(short))];
 		break;
 
 	case Writer::eFmtInt24Dithered:
-		_buf_interleaved_quantized = new uint8_t[k_writer_buf_frames * channel_count * 3];
+		_buf_interleaved_quantized = new uint8_t[(size_t)(k_writer_buf_frames * channel_count * 3)];
 		break;
 
 	default:
@@ -249,7 +254,7 @@ bool Writer::update()
 		return false;
 
 	bool keep_going = true;
-	size_t prev_index = _frame_index;
+	int64_t prev_index = _frame_index;
 	_frame_index += k_writer_buf_frames;
 	if (_frame_index >= _total_frame_count)
 	{
@@ -257,7 +262,7 @@ bool Writer::update()
 		_frame_index = _total_frame_count;
 	}
 
-	size_t frame_count = _frame_index - prev_index;
+	int64_t frame_count = _frame_index - prev_index;
 
 	// read/resample
 	_sample_producer->get_next(_buf_interleaved_f64, frame_count);
@@ -281,8 +286,8 @@ bool Writer::update()
 			// double -> float
 			// fixme SSE
 			float* dest = (float*)_buf_interleaved_quantized;
-			size_t sample_count = frame_count * channel_count;
-			for (size_t i = 0; i < sample_count; ++i)
+			int64_t sample_count = frame_count * channel_count;
+			for (int64_t i = 0; i < sample_count; ++i)
 			{
 				dest[i] = (float)_buf_interleaved_f64[i];
 			}
@@ -292,9 +297,9 @@ bool Writer::update()
 	case Writer::eFmtInt24Dithered:
 		{
 			// fixme SSE
-			size_t read_index = 0;
+			int64_t read_index = 0;
 			uint8_t* dest_char = _buf_interleaved_quantized;
-			for (size_t fi = 0; fi < frame_count; ++fi)
+			for (int64_t fi = 0; fi < frame_count; ++fi)
 			{
 				double dn = _buf_dither_noise[fi];
 				for (int c = 0; c < channel_count; ++c)
@@ -312,8 +317,8 @@ bool Writer::update()
 		{
 			// fixme SSE
 			short* dest = (short*)_buf_interleaved_quantized;
-			size_t index = 0;
-			for (size_t fi = 0; fi < frame_count; ++fi)
+			int64_t index = 0;
+			for (int64_t fi = 0; fi < frame_count; ++fi)
 			{
 				double dn = _buf_dither_noise[fi];
 				for (int c = 0; c < channel_count; ++c)
@@ -332,7 +337,7 @@ bool Writer::update()
 	}
 
 	// write buffer
-	drwav_uint64 dummy_for_now = drwav_write(_wav, frame_count * channel_count, buffer_to_use);
+	drwav_uint64 dummy_for_now = drwav_write(_wav, (uint64_t)(frame_count * channel_count), buffer_to_use);
 	(void)dummy_for_now; // fixme check for issues
 
 	// return
@@ -349,7 +354,7 @@ void Writer::update_all()
 }
 
 
-bool simple_wav_write_mono(const char* file_name, float* buf, int64_t total_frame_count)
+bool simple_wav_write_mono(const char* file_name, float* buf, uint64_t total_frame_count)
 {
 	drwav_data_format format;
 	format.container = drwav_container_riff;
@@ -363,6 +368,7 @@ bool simple_wav_write_mono(const char* file_name, float* buf, int64_t total_fram
 		return false;
 
 	drwav_uint64 dummy_for_now = drwav_write(wav, total_frame_count, buf);
+	(void)dummy_for_now; // avoid warning
 	drwav_close(wav);
 
 	return true;

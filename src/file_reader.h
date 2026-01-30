@@ -82,7 +82,7 @@ public:
 
 	~FileReader();
 
-	void read_data_from_file(int frame_offset, int frame_count);
+	void read_data_from_file(size_t frame_offset, size_t frame_count);
 
 	int get_sample_rate() override { return _sample_rate; }
 	int get_channel_count() override { return _channel_count; }

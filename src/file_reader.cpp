@@ -1,10 +1,24 @@
 // implementation is in main
 
+#pragma warning( disable : 4514 )
+#pragma warning( disable : 4820 ) // padding
+#pragma warning( disable : 5045 ) // whole file
+
+#pragma warning( push )
+
+#pragma warning( disable : 4365 )
+#pragma warning( disable : 4820 )
+#pragma warning( disable : 5039 )
+#pragma warning( disable : 5219 )
+#pragma warning( disable : 6262 )
+
 #define DR_WAV_IMPLEMENTATION
 #include "dep/dr_wav.h"
 
 #define DR_FLAC_IMPLEMENTATION
 #include "dep/dr_flac.h"
+
+#pragma warning( pop )
 
 #include <math.h> // for fabs
 
@@ -102,7 +116,7 @@ void predict(BufWriter& predicted, BufReader& history, int fill_count, int histo
 		fabs(history.read(2)) < limit
 		)
 	{
-		puts("Linear prediction");
+//		puts("Linear prediction");
 		double slope = history.read(0) - history.read(1);
 
 		double v = history.read(0);
@@ -117,7 +131,7 @@ void predict(BufWriter& predicted, BufReader& history, int fill_count, int histo
 		return;
 	}
 
-	puts("Autocorrelation");
+//	puts("Autocorrelation");
 
 	// try autocorrelation?
 	// look at 4 samples care about the slopes a lot and the avg value a little
@@ -141,10 +155,10 @@ void predict(BufWriter& predicted, BufReader& history, int fill_count, int histo
 		}
 	}
 
-	printf("fill_count=%d, best_ind=%d best_ofs=%f edge_ofs=%f\n", fill_count, best_ind, best_ofs, edge.ofs);
+//	printf("fill_count=%d, best_ind=%d best_ofs=%f edge_ofs=%f\n", fill_count, best_ind, best_ofs, edge.ofs);
 
 	double lf_ofs = edge.ofs - best_ofs;
-	printf("lf_ofs=%f\n", lf_ofs);
+//	printf("lf_ofs=%f\n", lf_ofs);
 
 	// copy all
 	int read_i = best_ind - 1;
@@ -161,7 +175,7 @@ void predict(BufWriter& predicted, BufReader& history, int fill_count, int histo
 	}
 }
 
-void check_all(double* buf, int count)
+void check_all(double* /* buf */, int /* count */)
 {
 #if false
 	for (int i = 0; i < count; ++i)
@@ -193,8 +207,8 @@ FileReader::FileReader(const char* file_name)
 	{
 		// get stats from wav
 		_channel_count = _impl->_wav->channels;
-		_total_frame_size = _impl->_wav->totalSampleCount / _channel_count;
-		_sample_rate = _impl->_wav->sampleRate;
+		_total_frame_size = (int64_t)_impl->_wav->totalSampleCount / _channel_count;
+		_sample_rate = (int)_impl->_wav->sampleRate;
 		_error_code = eOk;
 	}
 	else
@@ -205,14 +219,14 @@ FileReader::FileReader(const char* file_name)
 		{
 			// get stats from wav
 			_channel_count = _impl->_flac->channels;
-			_total_frame_size = _impl->_flac->totalPCMFrameCount / _channel_count;
-			_sample_rate = _impl->_flac->sampleRate;
+			_total_frame_size = (int64_t)_impl->_flac->totalPCMFrameCount / _channel_count;
+			_sample_rate = (int)_impl->_flac->sampleRate;
 			_error_code = eOk;
 		}
 	}
 
 	// allocate buffers
-	_buf_interleaved_f64 = new double[k_buf_frames * _channel_count];
+	_buf_interleaved_f64 = new double[(size_t)(k_buf_frames * _channel_count)];
 
 	// set to zero to ensure no bad values start out in here (needed for very short files)
 	memset(_buf_interleaved_f64, 0, k_buf_frames * _channel_count * sizeof(double));
@@ -250,9 +264,9 @@ void UpConvert(double* dest, const float* source, size_t count)
 }
 
 
-void FileReader::read_data_from_file(int frame_offset, int frame_count)
+void FileReader::read_data_from_file(size_t frame_offset, size_t frame_count)
 {
-	int frame_size = sizeof(double) * _channel_count;
+	size_t frame_size = sizeof(double) * _channel_count;
 
 	if (_buf_predicted_tail != nullptr)
 	{
@@ -274,7 +288,7 @@ void FileReader::read_data_from_file(int frame_offset, int frame_count)
 		return;
 	}
 
-	int samples_offset = frame_offset * _channel_count;
+	size_t samples_offset = frame_offset * _channel_count;
 	size_t samples_to_read = frame_count * _channel_count;
 	size_t samples_read = 0;
 
@@ -315,7 +329,7 @@ void FileReader::read_data_from_file(int frame_offset, int frame_count)
 		return;
 
 	// create prediction here
-	_buf_predicted_tail = new double[k_buf_frames * _channel_count];
+	_buf_predicted_tail = new double[(size_t)(k_buf_frames * _channel_count)];
 
 	// copy last samples (half buffer) to tail (first half)
 	// read half the buffer to end up at the last read sample

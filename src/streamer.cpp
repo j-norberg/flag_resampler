@@ -10,6 +10,10 @@
 
 #include <limits> // for epsilon
 
+#pragma warning( disable : 4514 ) // unused inl. removed
+#pragma warning( disable : 4820 ) // padding
+#pragma warning( disable : 5045 ) // spectre
+
 #include "ok_interp.inl"
 #include "streamer.h"
 #include "sample_producer.h"
@@ -22,7 +26,7 @@
 
 #if 0
 // blackman
-inline double win_funcion(double p)
+inline double win_function(double p)
 {
 	double v =
 		+ 0.42
@@ -35,7 +39,7 @@ inline double win_funcion(double p)
 
 #if 1
 //_blackman_nuttall
-inline double win_funcion_bn(double p)
+inline double win_function(double p)
 {
 	double v =
 		+ 0.3635819
@@ -50,7 +54,6 @@ inline double win_funcion_bn(double p)
 
 
 
-
 // 
 void create_windowed_sinc(double* dest, int count, double window_time_scale, double window_amp_scale)
 {
@@ -61,7 +64,7 @@ void create_windowed_sinc(double* dest, int count, double window_time_scale, dou
 	{
 		double p01 = (i + 0.5) * recip; // 0..1
 		double x = (p01 * 2.0) - 1.0;   // -1 .. 1
-		double win = win_funcion_bn(p01) * window_amp_scale;
+		double win = win_function(p01) * window_amp_scale;
 		double pN = x * mul; // normalized -> sin
 		if (abs(pN) > epsilon)
 		{
@@ -176,9 +179,10 @@ struct OverlapSaveStructT
 
 
 //
-template<int TRANSFORM_SIZE>
+template<int BITS>
 struct StreamerUpT : ISampleProducer
 {
+	enum { TRANSFORM_SIZE = 1 << BITS };
 	typedef OverlapSaveStructT<TRANSFORM_SIZE> OverlapSaveStruct;
 
 	// Odd filter-length makes it easier to align upsampling
@@ -211,11 +215,11 @@ struct StreamerUpT : ISampleProducer
 		_sr = _input->get_sample_rate() * up;
 
 		// shared thing
-		_oss = new OverlapSaveStruct[_channel_count];
+		_oss = new OverlapSaveStruct[(size_t)_channel_count];
 		for (int i = 0; i < _channel_count; ++i)
 			_oss[i].init(filter_kernel, filter_size);
 
-		_channels_buf.resize(_channel_count);
+		_channels_buf.resize((size_t)_channel_count);
 	}
 
 	~StreamerUpT()
@@ -240,7 +244,7 @@ struct StreamerUpT : ISampleProducer
 				_input->get_next(_channels_buf.data(), 1);
 				
 				// populate oss-structs
-				for (int c = 0; c < _channel_count; ++c)
+				for (size_t c = 0; c < (size_t)_channel_count; ++c)
 					_oss[c].write(i, _channels_buf[c]);
 
 				// reset ttl
@@ -418,9 +422,9 @@ struct InterpolatedSampler : ISampleProducer
 		_read_index_frac_limit = sr;
 		_read_index_frac_limit_recip = 1.0f / (double)sr;
 
-		_channel_buffer.resize(_channel_count);
+		_channel_buffer.resize((size_t)_channel_count);
 
-		_bufs = new Buf[_channel_count];
+		_bufs = new Buf[(size_t)_channel_count];
 
 		// note: induced 2 samples of latency
 		// but skip all up to that point
@@ -442,7 +446,7 @@ struct InterpolatedSampler : ISampleProducer
 	int get_sample_rate() override { return _out_sr; };
 	int get_channel_count() override { return _channel_count; }
 
-	void internal_fill_buffers(int ofs)
+	void internal_fill_buffers(size_t ofs)
 	{
 		if (_channel_count < 2)
 		{
@@ -455,7 +459,7 @@ struct InterpolatedSampler : ISampleProducer
 		for (int i = 0; i < k_half; ++i)
 		{
 			_input->get_next(_channel_buffer.data(), 1);
-			for (int c = 0; c < _channel_count; ++c)
+			for (size_t c = 0; c < (size_t)_channel_count; ++c)
 				_bufs[c]._b[ofs+i] = _channel_buffer[c];
 		}
 	}
@@ -469,7 +473,7 @@ struct InterpolatedSampler : ISampleProducer
 	void get_next(double* buf_interleaved, int64_t frame_count) override
 	{
 		int write_index = 0;
-		for (int frame_index = 0; frame_index < frame_count; ++frame_index)
+		for (int64_t frame_index = 0; frame_index < frame_count; ++frame_index)
 		{
 			// calculate frac (common for all channels)
 			double frac = (double)_read_index_frac * _read_index_frac_limit_recip;
@@ -507,7 +511,7 @@ struct InterpolatedSampler : ISampleProducer
 
 	void skip_next(int64_t frame_count) override
 	{
-		for (int frame_index = 0; frame_index < frame_count; ++frame_index)
+		for (int64_t frame_index = 0; frame_index < frame_count; ++frame_index)
 		{
 			// move index
 			_read_index_frac += _read_index_frac_add;
@@ -536,7 +540,7 @@ struct InterpolatedSampler : ISampleProducer
 };
 
 
-void create_filter(double* out_kernel_buffer, int len1, int kernel_len, int transform_size, double bw, double up)
+void create_filter_self_convolved(double* out_kernel_buffer, int len1, int transform_size, double bw, double up)
 {
 	// create initial filter
 	double transform_recip = 1.0 / transform_size;
@@ -546,6 +550,7 @@ void create_filter(double* out_kernel_buffer, int len1, int kernel_len, int tran
 	double scale_len = bw / up;
 	double scale_amp = bw / sqrt(up);
 	create_windowed_sinc(filter, len1, scale_len, scale_amp);
+
 	int zero_count = (transform_size - len1);
 
 	// clear the rest of the transform
@@ -560,8 +565,8 @@ void create_filter(double* out_kernel_buffer, int len1, int kernel_len, int tran
 	pffftd_transform(fft, filter, buf_freq2, buf_work, PFFFTD_FORWARD);
 
 	// create a second sligtly lower (maybe switch back to pure self convolve)
-	scale_len = (bw * 0.999) / up;
-	scale_amp = (bw * 0.999) / sqrt(up);
+	scale_len = (bw * 0.9995) / up;
+	scale_amp = (bw * 0.9995) / sqrt(up);
 	create_windowed_sinc(filter, len1, scale_len, scale_amp);
 	pffftd_transform(fft, filter, buf_freq, buf_work, PFFFTD_FORWARD);
 	pffftd_zconvolve_no_accumulate(fft, buf_freq2, buf_freq, buf_freq, transform_recip); // convolve
@@ -578,6 +583,7 @@ void create_filter(double* out_kernel_buffer, int len1, int kernel_len, int tran
 // or just the whole kernel
 void normalize_filter(double* filter_kernel, int transform_len, int up)
 {
+#if 1
 	for (int phase = 0; phase < up; ++phase)
 	{
 		double sum = 0.0;
@@ -592,7 +598,9 @@ void normalize_filter(double* filter_kernel, int transform_len, int up)
 		for (int i = phase; i < transform_len; i += up)
 			filter_kernel[i] *= mul;
 	}
+#endif
 
+#if 0
 	// finally full normalize
 	{
 		double sum = 0.0;
@@ -607,8 +615,75 @@ void normalize_filter(double* filter_kernel, int transform_len, int up)
 		for (int i = 0; i < transform_len; ++i)
 			filter_kernel[i] *= mul;
 	}
+#endif
 
 }
+
+
+
+
+
+
+ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* input, int limit = 80000)
+{
+//	int filter_1_half_len = 200 + up * 200;
+//	int filter_1_half_len = 640 + up * 460;
+//	int filter_1_half_len = 900 + up * 900; // no amplification at nyqvist
+	int filter_1_half_len = 3000 + up * 3000;
+
+	// clamp
+	if (filter_1_half_len > limit)
+	{
+//		printf("limit half-len to %d\n", limit);
+		filter_1_half_len = limit;
+	}
+
+	int filter_1_len = filter_1_half_len * 2 + 1;
+	int final_filter_len = filter_1_len * 2 + 1;
+
+	// how large transform do we need?
+	int bits = 12;
+	int transform_len = 1 << bits;
+	while (transform_len <= (final_filter_len * 2))
+	{
+		++bits;
+		transform_len = 1 << bits;
+	}
+
+	int inbuf_len = transform_len - final_filter_len;
+	printf("FFT bits=%d, transform-len=%dK, filter-len=%dK, inbuf-len=%dK\n", bits, transform_len/1024, final_filter_len / 1024, inbuf_len / 1024);
+
+	double* filter_kernel = (double*)pffftd_aligned_malloc(transform_len * sizeof(double)); // filter_kernel is only used in init
+	memset(filter_kernel, 0, transform_len * sizeof(double));
+
+	create_filter_self_convolved(filter_kernel, filter_1_len, transform_len, bw, up);
+	normalize_filter(filter_kernel, transform_len, up);
+
+	ISampleProducer* upsampler = nullptr;
+	switch (bits)
+	{
+	case 12: upsampler = new StreamerUpT<12>(filter_kernel, final_filter_len, up, input); break;
+	case 13: upsampler = new StreamerUpT<13>(filter_kernel, final_filter_len, up, input); break;
+	case 14: upsampler = new StreamerUpT<14>(filter_kernel, final_filter_len, up, input); break;
+	case 15: upsampler = new StreamerUpT<15>(filter_kernel, final_filter_len, up, input); break;
+	case 16: upsampler = new StreamerUpT<16>(filter_kernel, final_filter_len, up, input); break;
+	case 17: upsampler = new StreamerUpT<17>(filter_kernel, final_filter_len, up, input); break;
+	case 18: upsampler = new StreamerUpT<18>(filter_kernel, final_filter_len, up, input); break;
+	case 19: upsampler = new StreamerUpT<19>(filter_kernel, final_filter_len, up, input); break;
+	case 20: upsampler = new StreamerUpT<20>(filter_kernel, final_filter_len, up, input); break;
+	case 21: upsampler = new StreamerUpT<21>(filter_kernel, final_filter_len, up, input); break;
+	case 22: upsampler = new StreamerUpT<22>(filter_kernel, final_filter_len, up, input); break;
+
+	default:
+		assert(false);
+		break;
+	}
+
+	pffftd_aligned_free(filter_kernel); // filter_kernel is only used in init
+
+	return upsampler;
+}
+
 
 
 
@@ -630,65 +705,46 @@ void normalize_filter(double* filter_kernel, int transform_len, int up)
 // 22 -> 4M
 // 23 -> 8M
 
-enum
+ISampleProducer* make_upsampler_pair(int up1, int up2, double bw, ISampleProducer* input)
 {
-	k_bits = 20,
-	k_transform_len = 1 << k_bits
-};
-
-ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* input)
-{
-//	int filter_1_half_len = 200 + up * 200;
-//	int filter_1_half_len = 640 + up * 460;
-	int filter_1_half_len = 2000 + up * 2000;
-
-	// clamp
-	const int limit = 100000;
-	if (filter_1_half_len > limit)
-		filter_1_half_len = limit;
-
-	int filter_1_len = filter_1_half_len * 2 + 1;
-	int filter_2_len = filter_1_len * 2 + 1;
-
-	// fixme this should go away
-	int inbuf_len = k_transform_len - filter_2_len;
-	printf("\nOSS transform-len=%dK, filter-len=%dK, inbuf-len=%dK\n", k_transform_len/1024, filter_2_len / 1024, inbuf_len / 1024);
-
-	// don't even run if the inbuf is below N
-//	assert(inbuf_len > 100000);
-	assert(inbuf_len > 500);
-
-	double* filter_kernel = (double*)pffftd_aligned_malloc(k_transform_len * sizeof(double)); // filter_kernel is only used in init
-	memset(filter_kernel, 0, k_transform_len * sizeof(double));
-
-	create_filter(filter_kernel, filter_1_len, filter_2_len, k_transform_len, bw, up );
-	normalize_filter(filter_kernel, k_transform_len, up);
-
-	ISampleProducer* upsampler = new StreamerUpT<k_transform_len>(filter_kernel, filter_2_len, up, input);
-	pffftd_aligned_free(filter_kernel); // filter_kernel is only used in init
-
-	return upsampler;
+	printf("Up-pair of %dx(HQ) and %dx\n", up1, up2);
+	return make_integer_upsampler(up2, 0.99, make_integer_upsampler(up1, bw, input), 400);
 }
 
+ISampleProducer* make_upsampler_chain(int up, double bw, ISampleProducer* input)
+{
+	// special case 1
+	if (up < 2)
+		return make_integer_upsampler(1, bw, input);
 
+	// try split in 2
+	int factors[] = { 2,3,5,7 };
+	int fcount = sizeof(factors) / sizeof(int);
+	for (int i = 0 ; i < fcount; ++i)
+	{
+		// find the lowest factor and use HQ for that
+		int f = factors[i];
+		if (f >= up)
+			break;
 
+		if ((up % f) == 0)
+			return make_upsampler_pair(f, up / f, bw, input);
+	}
 
-
-
-
-
+	// need to use HQ for whole thing
+	return make_integer_upsampler(up, bw, input);
+}
 
 ISampleProducer* streamer_factory(ISampleProducer* input, int sr_out)
 {
 	int sr_in = input->get_sample_rate();
 
 	// fixme bw can be input
-	double bw = 0.999f;
+	double bw = 0.9995f;
 	if (sr_out < sr_in)
 		bw *= (double)sr_out / (double)sr_in;
 
 	// try and find integer ratio (too high becomes very expensive)
-	// should do 147 / 320 to suppoer 96 -> 44.1k
 	for (int up = 1; up < 32; ++up)
 	{
 		for (int decimate = 1; decimate < 513; ++decimate)
@@ -696,25 +752,22 @@ ISampleProducer* streamer_factory(ISampleProducer* input, int sr_out)
 			if ( (sr_out * decimate) == (sr_in * up))
 			{
 				// found rational, very cool, avoids interpolation
-
+				ISampleProducer* upsampler = make_upsampler_chain(up, bw, input);
 				if (1 == decimate)
 				{
 					// if decimate with 1, just pass-through instead...
 					printf("Integer Upsampling: up = %d\n", up);
-					// found rational, very cool, avoids interpolation
-					return make_integer_upsampler(up, bw, input);
-				}
-				else
-				{
-					printf("Rational: %d / %d\n", up, decimate);
-					return new TrivialDecimator(decimate, make_integer_upsampler(up, bw, input));
+					return upsampler;
 				}
 
+				printf("Rational: %d / %d\n", up, decimate);
+				return new TrivialDecimator(decimate, upsampler);
 			}
 		}
 	}
 
-	return new InterpolatedSampler(sr_out, make_integer_upsampler(32, bw, input));
+	// interpolated
+	return new InterpolatedSampler(sr_out, make_upsampler_chain(32, bw, input));
 }
 
 
