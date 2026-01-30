@@ -73,7 +73,8 @@ public:
 	void update_all();
 };
 
-extern bool simple_wav_write_mono(const char* file_name, float* buf, int64_t total_frame_count);
+extern bool simple_wav_write_mono_f32(const char* file_name, float* buf, int64_t total_frame_count);
+extern bool simple_wav_write_mono_f64(const char* file_name, double* buf, int64_t total_frame_count);
 
 
 #endif

@@ -353,8 +353,7 @@ void Writer::update_all()
 	}
 }
 
-
-bool simple_wav_write_mono(const char* file_name, float* buf, uint64_t total_frame_count)
+bool simple_wav_write_mono_f32(const char* file_name, float* buf, int64_t total_frame_count)
 {
 	drwav_data_format format;
 	format.container = drwav_container_riff;
@@ -367,7 +366,27 @@ bool simple_wav_write_mono(const char* file_name, float* buf, uint64_t total_fra
 	if (wav == nullptr)
 		return false;
 
-	drwav_uint64 dummy_for_now = drwav_write(wav, total_frame_count, buf);
+	drwav_uint64 dummy_for_now = drwav_write(wav, (uint64_t)total_frame_count, buf);
+	(void)dummy_for_now; // avoid warning
+	drwav_close(wav);
+
+	return true;
+}
+
+bool simple_wav_write_mono_f64(const char* file_name, double* buf, int64_t total_frame_count)
+{
+	drwav_data_format format;
+	format.container = drwav_container_riff;
+	format.format = DR_WAVE_FORMAT_IEEE_FLOAT;
+	format.channels = 1;
+	format.sampleRate = 44100;
+	format.bitsPerSample = 64;
+
+	drwav* wav = drwav_open_file_write(file_name, &format);
+	if (wav == nullptr)
+		return false;
+
+	drwav_uint64 dummy_for_now = drwav_write(wav, (uint64_t)total_frame_count, buf);
 	(void)dummy_for_now; // avoid warning
 	drwav_close(wav);
 
