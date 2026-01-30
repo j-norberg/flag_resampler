@@ -18,6 +18,8 @@
 #include "streamer.h"
 #include "sample_producer.h"
 
+#include "writer.h" // for simple write mono
+
 
 // hamming is bad
 // Blackman–Harris window
@@ -125,7 +127,7 @@ struct OverlapSaveStructT
 		pffftd_destroy_setup(_fft);
 	}
 
-	void init(double* temp_windowed_sinc, int filter_size)
+	void init_oss(double* temp_windowed_sinc, int filter_size)
 	{
 		assert(_bufs == nullptr);
 		assert(_fft == nullptr);
@@ -142,7 +144,7 @@ struct OverlapSaveStructT
 		pffftd_transform(_fft, temp_windowed_sinc, _bufs->_buf_filter, _bufs->_buf_work, PFFFTD_FORWARD);
 	}
 
-	// 1. fill buffer (call this K_INBUF_SIZE times)
+	// 1. fill buffer (call this _inblock_size times)
 	inline void write(int index, double v)
 	{
 		_bufs->_in_buf_time[_filter_size + index] = v;
@@ -157,14 +159,14 @@ struct OverlapSaveStructT
 		// scoot the input-buffer
 		memmove(_bufs->_in_buf_time, _bufs->_in_buf_time + _inblock_size, _filter_size * sizeof(double));
 
-		// multiply with "kernel"
+		// multiply with the freq-version of the kernel
 		pffftd_zconvolve_no_accumulate(_fft, _bufs->_in_buf_freq, _bufs->_buf_filter, _bufs->_out_buf_freq, _transform_recip);
 
 		// IFFT
 		pffftd_transform(_fft, _bufs->_out_buf_freq, _bufs->_out_buf_time, _bufs->_buf_work, PFFFTD_BACKWARD);
 	}
 
-	// 3. read from here (call this K_INBUF_SIZE times)
+	// 3. read from here (call this _inblock_size times)
 	inline double read(int index)
 	{
 		return _bufs->_out_buf_time[_filter_size + index];
@@ -215,9 +217,10 @@ struct StreamerUpT : ISampleProducer
 		_sr = _input->get_sample_rate() * up;
 
 		// shared thing
+		// fixme, share the freq-space-filter-kernel
 		_oss = new OverlapSaveStruct[(size_t)_channel_count];
 		for (int i = 0; i < _channel_count; ++i)
-			_oss[i].init(filter_kernel, filter_size);
+			_oss[i].init_oss(filter_kernel, filter_size);
 
 		_channels_buf.resize((size_t)_channel_count);
 	}
@@ -268,7 +271,6 @@ struct StreamerUpT : ISampleProducer
 	{
 		int external_upsampled_padding = _input->get_padding_frame_count() * _up;
 		int internal_padding = (_filter_size - 1) / 2;
-		internal_padding -= 1; // where does this come from?
 		return external_upsampled_padding + internal_padding;
 	}
 
@@ -539,63 +541,41 @@ struct InterpolatedSampler : ISampleProducer
 
 };
 
-
-void create_filter_self_convolved(double* out_kernel_buffer, int len1, int transform_size, double bw, double up)
-{
-	// create initial filter
-	double transform_recip = 1.0 / transform_size;
-
-	double* filter = (double*)pffftd_aligned_malloc(transform_size * sizeof(double));
-
-	double scale_len = bw / up;
-	double scale_amp = bw / sqrt(up);
-	create_windowed_sinc(filter, len1, scale_len, scale_amp);
-
-	int zero_count = (transform_size - len1);
-
-	// clear the rest of the transform
-	memset(filter + len1, 0, zero_count * sizeof(double));
-
-	// self convolve
-	double* buf_work= (double*)pffftd_aligned_malloc(transform_size * sizeof(double));
-	double* buf_freq = (double*)pffftd_aligned_malloc(transform_size * sizeof(double));
-	double* buf_freq2 = (double*)pffftd_aligned_malloc(transform_size * sizeof(double));
-
-	PFFFTD_Setup* fft = pffftd_new_setup(transform_size, PFFFTD_REAL);
-	pffftd_transform(fft, filter, buf_freq2, buf_work, PFFFTD_FORWARD);
-
-	// create a second sligtly lower (maybe switch back to pure self convolve)
-	scale_len = (bw * 0.9995) / up;
-	scale_amp = (bw * 0.9995) / sqrt(up);
-	create_windowed_sinc(filter, len1, scale_len, scale_amp);
-	pffftd_transform(fft, filter, buf_freq, buf_work, PFFFTD_FORWARD);
-	pffftd_zconvolve_no_accumulate(fft, buf_freq2, buf_freq, buf_freq, transform_recip); // convolve
-	pffftd_transform(fft, buf_freq, out_kernel_buffer, buf_work, PFFFTD_BACKWARD);
-
-	pffftd_destroy_setup(fft);
-	pffftd_aligned_free(buf_freq2);
-	pffftd_aligned_free(buf_freq);
-	pffftd_aligned_free(buf_work);
-	pffftd_aligned_free(filter);
-}
-
 // maybe normalize each phase?
 // or just the whole kernel
-void normalize_filter(double* filter_kernel, int transform_len, int up)
+void normalize_filter(double* filter_kernel, int filter_len, int up)
 {
+#if 0
+	// ensure symmetry
+	{
+		int a = 0;
+		int b = filter_len - 1;
+		for (; a < b; ++a, --b)
+		{
+			double diff = (filter_kernel[a] - filter_kernel[b]);
+			if (fabs(diff) > 0.000001)
+				puts("no symmetry, internal bug");
+
+//			double avg = (filter_kernel[a] + filter_kernel[b]) * 0.5;
+	//		filter_kernel[a] = avg;
+		//	filter_kernel[b] = avg;
+		}
+	}
+#endif
+
 #if 1
 	for (int phase = 0; phase < up; ++phase)
 	{
 		double sum = 0.0;
-		for (int i = phase; i < transform_len; i+=up)
+		for (int i = phase; i < filter_len; i += up)
 			sum += filter_kernel[i];
 
 		double mul = 1.0 / sum;
-		
-//		uint64_t* mul_p = (uint64_t*)&mul;
-//		printf("phase=%i/%i, mul=%g %llx\n", phase, up, mul, *mul_p);
 
-		for (int i = phase; i < transform_len; i += up)
+		//uint64_t* mul_p = (uint64_t*)&mul;
+		//printf("phase=%i/%i, mul=%g %llx\n", phase, up, mul, *mul_p);
+
+		for (int i = phase; i < filter_len; i += up)
 			filter_kernel[i] *= mul;
 	}
 #endif
@@ -604,19 +584,57 @@ void normalize_filter(double* filter_kernel, int transform_len, int up)
 	// finally full normalize
 	{
 		double sum = 0.0;
-		for (int i = 0; i < transform_len; ++i)
+		for (int i = 0; i < filter_len; ++i)
 			sum += filter_kernel[i];
 
 		double mul = (double)up / sum;
 
-//		uint64_t* mul_p = (uint64_t*)&mul;
-//		printf("FINAL, mul=%g %llx\n", mul, *mul_p);
+		//		uint64_t* mul_p = (uint64_t*)&mul;
+		//		printf("FINAL, mul=%g %llx\n", mul, *mul_p);
 
-		for (int i = 0; i < transform_len; ++i)
+		for (int i = 0; i < filter_len; ++i)
 			filter_kernel[i] *= mul;
 	}
 #endif
 
+}
+
+void create_filter_self_convolved(double* out_kernel_buffer, int len1, int transform_size, double bw, double up)
+{
+	PFFFTD_Setup* fft = pffftd_new_setup(transform_size, PFFFTD_REAL);
+	double* buf_work = (double*)pffftd_aligned_malloc(transform_size * sizeof(double));
+
+	// create initial filters
+	double* filter1 = (double*)pffftd_aligned_malloc(transform_size * sizeof(double));
+	memset(filter1, 0, transform_size * sizeof(double));
+	double scale_len = bw / up;
+	double scale_amp = bw / sqrt(up);
+	create_windowed_sinc(filter1, len1, scale_len, scale_amp);
+	double* buf_freq1 = (double*)pffftd_aligned_malloc(transform_size * sizeof(double));
+	pffftd_transform(fft, filter1, buf_freq1, buf_work, PFFFTD_FORWARD);
+
+	// create a second sligtly lower (maybe switch back to pure self convolve)
+	double* filter2 = (double*)pffftd_aligned_malloc(transform_size * sizeof(double));
+	memset(filter2, 0, transform_size * sizeof(double));
+	scale_len = (bw * 0.999) / up;
+	scale_amp = (bw * 0.999) / sqrt(up);
+	create_windowed_sinc(filter2, len1, scale_len, scale_amp);
+	double* buf_freq2 = (double*)pffftd_aligned_malloc(transform_size * sizeof(double));
+	pffftd_transform(fft, filter2, buf_freq2, buf_work, PFFFTD_FORWARD);
+
+	// self convolve
+	double* buf_freq3 = (double*)pffftd_aligned_malloc(transform_size * sizeof(double));
+	double transform_recip = 1.0 / transform_size;
+	pffftd_zconvolve_no_accumulate(fft, buf_freq1, buf_freq2, buf_freq3, transform_recip); // convolve
+	pffftd_transform(fft, buf_freq3, out_kernel_buffer, buf_work, PFFFTD_BACKWARD);
+
+	pffftd_aligned_free(buf_freq3);
+	pffftd_aligned_free(buf_freq2);
+	pffftd_aligned_free(buf_freq1);
+	pffftd_aligned_free(filter2);
+	pffftd_aligned_free(filter1);
+	pffftd_aligned_free(buf_work);
+	pffftd_destroy_setup(fft);
 }
 
 
@@ -624,12 +642,16 @@ void normalize_filter(double* filter_kernel, int transform_len, int up)
 
 
 
-ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* input, int limit = 80000)
+ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* input, int limit = 100000)
 {
-//	int filter_1_half_len = 200 + up * 200;
+	// formula to deal with BW-limiting and upsampling
+//	int filter_1_half_len = 2 + up * 1;
+//	int filter_1_half_len = 160 + up * 115;
+//	int filter_1_half_len = 320 + up * 230;
 //	int filter_1_half_len = 640 + up * 460;
-//	int filter_1_half_len = 900 + up * 900; // no amplification at nyqvist
-	int filter_1_half_len = 3000 + up * 3000;
+//	int filter_1_half_len = 1280 + up * 920; // no amplification at nyqvist
+//	int filter_1_half_len = 2560 + up * 1840;
+	int filter_1_half_len = 3200 + up * 2300;
 
 	// clamp
 	if (filter_1_half_len > limit)
@@ -639,40 +661,51 @@ ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* inpu
 	}
 
 	int filter_1_len = filter_1_half_len * 2 + 1;
-	int final_filter_len = filter_1_len * 2 + 1;
 
-	// how large transform do we need?
-	int bits = 12;
-	int transform_len = 1 << bits;
-	while (transform_len <= (final_filter_len * 2))
-	{
+	// IMPORTANT: the length of self-convolving?
+	int filter_2_len = filter_1_len * 2 - 1;
+
+	// create kernel in a temp-location
+	int bits = 6;
+	int desired_transform_len = filter_2_len * 2;
+	while ((1 << bits) < desired_transform_len)
 		++bits;
-		transform_len = 1 << bits;
-	}
-
-	int inbuf_len = transform_len - final_filter_len;
-	printf("FFT bits=%d, transform-len=%dK, filter-len=%dK, inbuf-len=%dK\n", bits, transform_len/1024, final_filter_len / 1024, inbuf_len / 1024);
+	int transform_len = 1 << bits;
 
 	double* filter_kernel = (double*)pffftd_aligned_malloc(transform_len * sizeof(double)); // filter_kernel is only used in init
 	memset(filter_kernel, 0, transform_len * sizeof(double));
-
 	create_filter_self_convolved(filter_kernel, filter_1_len, transform_len, bw, up);
-	normalize_filter(filter_kernel, transform_len, up);
+	
+//	simple_wav_write_mono_f64("kernel2.wav", filter_kernel, transform_len);
+
+	normalize_filter(filter_kernel, filter_2_len, up);
+	
+	// how large transform do we really need?
+
+	int inbuf_len = transform_len - filter_2_len;
+	printf("FFT bits=%d, transform-len=%dK, filter-len=%dK, inbuf-len=%dK, BW=%f\n", bits, transform_len/1024, filter_2_len / 1024, inbuf_len / 1024, bw);
 
 	ISampleProducer* upsampler = nullptr;
 	switch (bits)
 	{
-	case 12: upsampler = new StreamerUpT<12>(filter_kernel, final_filter_len, up, input); break;
-	case 13: upsampler = new StreamerUpT<13>(filter_kernel, final_filter_len, up, input); break;
-	case 14: upsampler = new StreamerUpT<14>(filter_kernel, final_filter_len, up, input); break;
-	case 15: upsampler = new StreamerUpT<15>(filter_kernel, final_filter_len, up, input); break;
-	case 16: upsampler = new StreamerUpT<16>(filter_kernel, final_filter_len, up, input); break;
-	case 17: upsampler = new StreamerUpT<17>(filter_kernel, final_filter_len, up, input); break;
-	case 18: upsampler = new StreamerUpT<18>(filter_kernel, final_filter_len, up, input); break;
-	case 19: upsampler = new StreamerUpT<19>(filter_kernel, final_filter_len, up, input); break;
-	case 20: upsampler = new StreamerUpT<20>(filter_kernel, final_filter_len, up, input); break;
-	case 21: upsampler = new StreamerUpT<21>(filter_kernel, final_filter_len, up, input); break;
-	case 22: upsampler = new StreamerUpT<22>(filter_kernel, final_filter_len, up, input); break;
+	case  6: upsampler = new StreamerUpT< 6>(filter_kernel, filter_2_len, up, input); break;
+	case  7: upsampler = new StreamerUpT< 7>(filter_kernel, filter_2_len, up, input); break;
+	case  8: upsampler = new StreamerUpT< 8>(filter_kernel, filter_2_len, up, input); break;
+	case  9: upsampler = new StreamerUpT< 9>(filter_kernel, filter_2_len, up, input); break;
+	case 10: upsampler = new StreamerUpT<10>(filter_kernel, filter_2_len, up, input); break;
+	case 11: upsampler = new StreamerUpT<11>(filter_kernel, filter_2_len, up, input); break;
+	case 12: upsampler = new StreamerUpT<12>(filter_kernel, filter_2_len, up, input); break;
+	case 13: upsampler = new StreamerUpT<13>(filter_kernel, filter_2_len, up, input); break;
+	case 14: upsampler = new StreamerUpT<14>(filter_kernel, filter_2_len, up, input); break;
+	case 15: upsampler = new StreamerUpT<15>(filter_kernel, filter_2_len, up, input); break;
+	case 16: upsampler = new StreamerUpT<16>(filter_kernel, filter_2_len, up, input); break;
+	case 17: upsampler = new StreamerUpT<17>(filter_kernel, filter_2_len, up, input); break;
+	case 18: upsampler = new StreamerUpT<18>(filter_kernel, filter_2_len, up, input); break;
+	case 19: upsampler = new StreamerUpT<19>(filter_kernel, filter_2_len, up, input); break;
+	case 20: upsampler = new StreamerUpT<20>(filter_kernel, filter_2_len, up, input); break;
+	case 21: upsampler = new StreamerUpT<21>(filter_kernel, filter_2_len, up, input); break;
+	case 22: upsampler = new StreamerUpT<22>(filter_kernel, filter_2_len, up, input); break;
+	case 23: upsampler = new StreamerUpT<23>(filter_kernel, filter_2_len, up, input); break;
 
 	default:
 		assert(false);
@@ -708,7 +741,8 @@ ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* inpu
 ISampleProducer* make_upsampler_pair(int up1, int up2, double bw, ISampleProducer* input)
 {
 	printf("Up-pair of %dx(HQ) and %dx\n", up1, up2);
-	return make_integer_upsampler(up2, 0.99, make_integer_upsampler(up1, bw, input), 400);
+//	return make_integer_upsampler(up2, 0.99, make_integer_upsampler(up1, bw, input), 400);
+	return make_integer_upsampler(up2, 0.99, make_integer_upsampler(up1, bw, input), 600);
 }
 
 ISampleProducer* make_upsampler_chain(int up, double bw, ISampleProducer* input)
@@ -740,12 +774,12 @@ ISampleProducer* streamer_factory(ISampleProducer* input, int sr_out)
 	int sr_in = input->get_sample_rate();
 
 	// fixme bw can be input
-	double bw = 0.9995f;
+	double bw = 0.999f;
 	if (sr_out < sr_in)
 		bw *= (double)sr_out / (double)sr_in;
 
 	// try and find integer ratio (too high becomes very expensive)
-	for (int up = 1; up < 32; ++up)
+	for (int up = 1; up <= 32; ++up)
 	{
 		for (int decimate = 1; decimate < 513; ++decimate)
 		{
