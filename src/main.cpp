@@ -36,7 +36,7 @@ flag_resampler.exe --input infile.wav --output outfile.wav --sample_rate 44100 -
 -i / --input is followed by a path to wave/flac file
 -o / --output is followed by a path to wave file that will write to
 -r / --sample_rate followed by desired sample rate (for instance 44100, 48000, 96000, 192000)
-
+-q / --quality followed by a percentage (default is 100)
 -f / --format are one of these:
 16 = 16 bit dithered (useful for CD)
 24 = 24 bit dithered (useful for DVD/Blu-ray)
@@ -93,6 +93,7 @@ struct Options
 
 	std::string in_file;
 	std::string out_file;
+	int quality = 100;
 	Writer::OutFormat _format = Writer::eFmtFloat;
 
 	int out_sr = 44100;
@@ -145,6 +146,13 @@ bool handle_flag(Options& o, int argc, const char** argv, int& index)
 		const char* sr_str = next_arg(argc, argv, index, "error: -r should be followed by sample rate\n");
 		o.out_sr = sr_str ? atoi(sr_str) : 0; // set to 0 to indicate issue
 		return o.out_sr > 0;
+	}
+
+	if (arg == "-q" || arg == "--quality")
+	{
+		const char* sr_str = next_arg(argc, argv, index, "error: -q should be followed by quality percentage\n");
+		o.quality = sr_str ? atoi(sr_str) : 0; // set to 0 to indicate issue
+		return o.quality > 0;
 	}
 
 	if (arg == "-f" || arg == "--format")
@@ -267,8 +275,17 @@ int main(int argc, const char** argv)
 	if (s.out_sr < 1)
 	{
 		// error about bad sample-rate
+		puts("bad sample rate");
 		return -1;
 	}
+
+	if (s.quality < 1)
+	{
+		// error about bad quality
+		puts("bad quality");
+		return -1;
+	}
+
 
 	//
 	if (s.out_file.empty())
@@ -309,7 +326,7 @@ int main(int argc, const char** argv)
 	else
 	{
 		//
-		streamer = streamer_factory(reader, s.out_sr);
+		streamer = streamer_factory(reader, s.out_sr, s.quality);
 	}
 
 	if (streamer == nullptr)

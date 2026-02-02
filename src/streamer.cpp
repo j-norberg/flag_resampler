@@ -642,16 +642,45 @@ void create_filter_self_convolved(double* out_kernel_buffer, int len1, int trans
 
 
 
-ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* input, int limit = 100000)
+
+// 11 -> 2048
+// 12 -> 4096
+// 13 -> 8192
+// 14 -> 16k
+// 15 -> 32k
+// 16 -> 64k
+// 17 -> 128k
+// 18 -> 256k
+// 19 -> 512k
+// 20 -> 1M
+// 21 -> 2M
+// 22 -> 4M
+// 23 -> 8M
+
+ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* input, int quality_percentage, int limit = 100000)
 {
+	if (quality_percentage < 1)
+		puts("ERROR");
+
+	if (quality_percentage > 100)
+		puts("ERROR");
+
 	// formula to deal with BW-limiting and upsampling
 //	int filter_1_half_len = 2 + up * 1;
 //	int filter_1_half_len = 160 + up * 115;
-//	int filter_1_half_len = 320 + up * 230;
+
+	int filter_1_half_len = 320 + up * 230;
+
 //	int filter_1_half_len = 640 + up * 460;
-//	int filter_1_half_len = 1280 + up * 920; // no amplification at nyqvist
-//	int filter_1_half_len = 2560 + up * 1840;
-	int filter_1_half_len = 3200 + up * 2300;
+
+	// filter_1_half_len = 1280 + up * 920; // no amplification at nyqvist
+
+	if (quality_percentage > 95)
+		filter_1_half_len = 3200 + up * 2300;
+	
+
+	//	int filter_1_half_len = 2560 + up * 1840;
+
 
 	// clamp
 	if (filter_1_half_len > limit)
@@ -667,7 +696,7 @@ ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* inpu
 
 	// create kernel in a temp-location
 	int bits = 6;
-	int desired_transform_len = filter_2_len * 2;
+	int desired_transform_len = filter_2_len * 4; // fixme how much larger do we need?
 	while ((1 << bits) < desired_transform_len)
 		++bits;
 	int transform_len = 1 << bits;
@@ -724,31 +753,21 @@ ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* inpu
 
 
 
-// 11 -> 2048
-// 12 -> 4096
-// 13 -> 8192
-// 14 -> 16k
-// 15 -> 32k
-// 16 -> 64k
-// 17 -> 128k
-// 18 -> 256k
-// 19 -> 512k
-// 20 -> 1M
-// 21 -> 2M
-// 22 -> 4M
-// 23 -> 8M
-
-ISampleProducer* make_upsampler_pair(int up1, int up2, double bw, ISampleProducer* input)
+ISampleProducer* make_upsampler_pair(int up1, int up2, double bw, ISampleProducer* input, int quality_percentage)
 {
 	printf("Up-pair of %dx(HQ) and %dx\n", up1, up2);
-	return make_integer_upsampler(up2, 0.99, make_integer_upsampler(up1, bw, input), 600);
+	int limit = 600;
+	if (quality_percentage < 90)
+		limit = 100;
+
+	return make_integer_upsampler(up2, 0.99, make_integer_upsampler(up1, bw, input, quality_percentage), quality_percentage, limit);
 }
 
-ISampleProducer* make_upsampler_chain(int up, double bw, ISampleProducer* input)
+ISampleProducer* make_upsampler_chain(int up, double bw, ISampleProducer* input, int quality_percentage)
 {
 	// special case 1
 	if (up < 2)
-		return make_integer_upsampler(1, bw, input);
+		return make_integer_upsampler(1, bw, input, quality_percentage);
 
 	// try split in 2
 	int factors[] = { 2,3,5,7 };
@@ -761,19 +780,23 @@ ISampleProducer* make_upsampler_chain(int up, double bw, ISampleProducer* input)
 			break;
 
 		if ((up % f) == 0)
-			return make_upsampler_pair(f, up / f, bw, input);
+			return make_upsampler_pair(f, up / f, bw, input, quality_percentage);
 	}
 
 	// need to use HQ for whole thing
-	return make_integer_upsampler(up, bw, input);
+	return make_integer_upsampler(up, bw, input, quality_percentage);
 }
 
-ISampleProducer* streamer_factory(ISampleProducer* input, int sr_out)
+ISampleProducer* streamer_factory(ISampleProducer* input, int sr_out, int quality_percentage)
 {
 	int sr_in = input->get_sample_rate();
 
 	// fixme bw can be input
 	double bw = 0.999f;
+	
+	if (quality_percentage < 90)
+		bw = 0.995;
+
 	if (sr_out < sr_in)
 		bw *= (double)sr_out / (double)sr_in;
 
@@ -785,7 +808,7 @@ ISampleProducer* streamer_factory(ISampleProducer* input, int sr_out)
 			if ( (sr_out * decimate) == (sr_in * up))
 			{
 				// found rational, very cool, avoids interpolation
-				ISampleProducer* upsampler = make_upsampler_chain(up, bw, input);
+				ISampleProducer* upsampler = make_upsampler_chain(up, bw, input, quality_percentage);
 				if (1 == decimate)
 				{
 					// if decimate with 1, just pass-through instead...
@@ -800,7 +823,7 @@ ISampleProducer* streamer_factory(ISampleProducer* input, int sr_out)
 	}
 
 	// interpolated
-	return new InterpolatedSampler(sr_out, make_upsampler_chain(32, bw, input));
+	return new InterpolatedSampler(sr_out, make_upsampler_chain(32, bw, input, quality_percentage));
 }
 
 
