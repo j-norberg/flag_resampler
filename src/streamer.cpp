@@ -741,7 +741,6 @@ ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* inpu
 ISampleProducer* make_upsampler_pair(int up1, int up2, double bw, ISampleProducer* input)
 {
 	printf("Up-pair of %dx(HQ) and %dx\n", up1, up2);
-//	return make_integer_upsampler(up2, 0.99, make_integer_upsampler(up1, bw, input), 400);
 	return make_integer_upsampler(up2, 0.99, make_integer_upsampler(up1, bw, input), 600);
 }
 
