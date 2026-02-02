@@ -109,7 +109,7 @@ struct OverlapSaveStructT
 
 	int _filter_size = 0;
 	int _inblock_size = 0;
-	double _transform_recip = 1.0f;
+	double _transform_recip = 1.0;
 
 	PFFFTD_Setup* _fft; // could be shared btw all instances
 
@@ -127,14 +127,16 @@ struct OverlapSaveStructT
 		pffftd_destroy_setup(_fft);
 	}
 
-	void init_oss(double* temp_windowed_sinc, int filter_size)
+	void init_oss(const double* temp_windowed_sinc, int filter_size)
 	{
 		assert(_bufs == nullptr);
 		assert(_fft == nullptr);
+		assert((filter_size & 1) == 1); // require odd filter length
 
 		_filter_size = filter_size;
 		_inblock_size = TRANSFORM_SIZE - filter_size;
-		_transform_recip = 1.f / TRANSFORM_SIZE;
+		_transform_recip = 1.0 / TRANSFORM_SIZE; // need to be double here
+
 
 		_fft = pffftd_new_setup(TRANSFORM_SIZE, PFFFTD_REAL);
 
@@ -203,7 +205,7 @@ struct StreamerUpT : ISampleProducer
 	std::vector<double> _channels_buf;
 	OverlapSaveStruct* _oss;
 	
-	StreamerUpT(double* filter_kernel, int filter_size, int up, ISampleProducer* input)
+	StreamerUpT(const double* filter_kernel, int filter_size, int up, ISampleProducer* input)
 	{
 		_filter_size = filter_size;
 		_inblock_size = TRANSFORM_SIZE - filter_size;
@@ -422,7 +424,7 @@ struct InterpolatedSampler : ISampleProducer
 		_read_index_frac = 0;
 		_read_index_frac_add = input->get_sample_rate();
 		_read_index_frac_limit = sr;
-		_read_index_frac_limit_recip = 1.0f / (double)sr;
+		_read_index_frac_limit_recip = 1.0 / (double)sr;
 
 		_channel_buffer.resize((size_t)_channel_count);
 
@@ -580,7 +582,7 @@ void normalize_filter(double* filter_kernel, int filter_len, int up)
 	}
 #endif
 
-#if 0
+#if 1
 	// finally full normalize
 	{
 		double sum = 0.0;
@@ -696,7 +698,7 @@ ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* inpu
 
 	// create kernel in a temp-location
 	int bits = 6;
-	int desired_transform_len = filter_2_len * 4; // fixme how much larger do we need?
+	int desired_transform_len = filter_2_len * 3; // fixme how much larger do we need?
 	while ((1 << bits) < desired_transform_len)
 		++bits;
 	int transform_len = 1 << bits;
@@ -709,7 +711,14 @@ ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* inpu
 	memset(filter_kernel, 0, transform_len * sizeof(double));
 	create_filter_self_convolved(filter_kernel, filter_1_len, transform_len, bw, up);
 	
-//	simple_wav_write_mono_f64("kernel2.wav", filter_kernel, transform_len);
+	//
+//	if (up < 3)
+//	{
+		// only first
+//		simple_wav_write_mono_f64("kernel_self_convolved_t.wav", filter_kernel, transform_len);
+//		simple_wav_write_mono_f64("kernel_self_convolved.wav", filter_kernel, filter_2_len);
+//	}
+	
 
 	normalize_filter(filter_kernel, filter_2_len, up);
 	
