@@ -357,9 +357,3 @@ int main(int argc, const char** argv)
 
 	return 0;
 }
-
-// test downsample (back to 44k1)
-// -r 44100 -i sweep_1_44100-48000.wav -o sweep_1_44100-48000_downsample.wav
-
-// test upsample (to 48k)
-// -r 48000 -i sweep_0.wav -o sweep_0_upsample.wav
