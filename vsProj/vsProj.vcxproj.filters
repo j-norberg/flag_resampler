@@ -18,6 +18,15 @@
     <None Include="..\src\ok_interp.inl">
       <Filter>Header Files</Filter>
     </None>
+    <None Include="..\src\options.inl">
+      <Filter>Source Files</Filter>
+    </None>
+    <None Include="..\src\timer.inl">
+      <Filter>Source Files</Filter>
+    </None>
+    <None Include="..\src\interpolated_sampler.inl">
+      <Filter>Source Files</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\src\main.cpp">

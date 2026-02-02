@@ -19,7 +19,10 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\src\interpolated_sampler.inl" />
     <None Include="..\src\ok_interp.inl" />
+    <None Include="..\src\options.inl" />
+    <None Include="..\src\timer.inl" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\src\dep\pffft-double.c" />

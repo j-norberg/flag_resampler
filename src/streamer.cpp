@@ -53,9 +53,6 @@ inline double win_function(double p)
 }
 #endif
 
-
-
-
 // 
 void create_windowed_sinc(double* dest, int count, double window_time_scale, double window_amp_scale)
 {
@@ -91,7 +88,7 @@ struct BufsT
 	// this is the only one the is not fully temp
 	double _in_buf_time[K_BUFS];	// input goes here and is sliding in to this buffer from the back
 
-	// to ensure no aliasing, all buffers have to be explicit
+	// to ensure no aliasing (of memory), all buffers have to be explicit
 	double _buf_filter[K_BUFS];
 	double _buf_work[K_BUFS];
 
@@ -137,7 +134,6 @@ struct OverlapSaveStructT
 		_inblock_size = TRANSFORM_SIZE - filter_size;
 		_transform_recip = 1.0 / TRANSFORM_SIZE; // need to be double here
 
-
 		_fft = pffftd_new_setup(TRANSFORM_SIZE, PFFFTD_REAL);
 
 		_bufs = (Bufs*)pffftd_aligned_malloc(sizeof(Bufs));
@@ -174,13 +170,6 @@ struct OverlapSaveStructT
 		return _bufs->_out_buf_time[_filter_size + index];
 	}
 };
-
-
-
-
-
-
-
 
 //
 template<int BITS>
@@ -313,235 +302,10 @@ struct StreamerUpT : ISampleProducer
 
 };
 
+#include "trivial_decimator.inl"
+#include "interpolated_sampler.inl"
 
 
-
-
-
-
-
-
-
-
-// very simple
-struct TrivialDecimator : ISampleProducer
-{
-	ISampleProducer* _input;
-	int _channel_count;
-	int _out_sr;
-
-	int _skipFrames;
-
-	TrivialDecimator(int multiplier, ISampleProducer* input)
-	{
-		_input = input;
-		_channel_count = input->get_channel_count();
-		_out_sr = input->get_sample_rate() / multiplier;
-
-		_skipFrames = multiplier - 1;
-
-		// throw away all padding
-		input->skip_next(input->get_padding_frame_count());
-	}
-
-	~TrivialDecimator()
-	{
-		delete _input;
-	}
-
-	int get_sample_rate() override { return _out_sr; };
-	int get_channel_count() override { return _channel_count; }
-
-	virtual int get_padding_frame_count() override
-	{
-		// padding skipped in contructor
-		return 0;
-	}
-
-	void get_next(double* buf_interleaved, int64_t frame_count) override
-	{
-		if (_skipFrames == 0)
-		{
-			// pass-through (common for integer-upscaling)
-			_input->get_next(buf_interleaved, frame_count);
-			return;
-		}
-
-		for (int i = 0; i < frame_count; ++i)
-		{
-			// read one frame
-			_input->get_next(buf_interleaved, 1);
-			buf_interleaved += _channel_count;
-
-			_input->skip_next(_skipFrames);
-		}
-	}
-
-	void skip_next(int64_t frame_count) override
-	{
-		int64_t skip_frames = frame_count * (_skipFrames + 1);
-		_input->skip_next(skip_frames);
-	}
-
-};
-
-
-
-struct InterpolatedSampler : ISampleProducer
-{
-	ISampleProducer* _input;
-	int _channel_count;
-	int _out_sr;
-
-	enum {
-		k_bufs = 64, // interpolation only uses 6 samples 
-		k_mask = k_bufs - 1,
-		k_half = k_bufs >> 1
-	};
-
-	struct Buf {
-		double _b[k_bufs] = { -0.99 }; // fixme should never be visited
-	};
-
-	std::vector<double> _channel_buffer;
-
-	Buf* _bufs;
-
-	int _read_index;
-	int _read_index_frac;
-	int _read_index_frac_add;
-	int _read_index_frac_limit;
-	double _read_index_frac_limit_recip;
-
-	InterpolatedSampler(int sr, ISampleProducer* input)
-	{
-		_input = input;
-		_channel_count = input->get_channel_count();
-		_out_sr = sr;
-
-		_read_index = 0;
-
-		_read_index_frac = 0;
-		_read_index_frac_add = input->get_sample_rate();
-		_read_index_frac_limit = sr;
-		_read_index_frac_limit_recip = 1.0 / (double)sr;
-
-		_channel_buffer.resize((size_t)_channel_count);
-
-		_bufs = new Buf[(size_t)_channel_count];
-
-		// note: induced 2 samples of latency
-		// but skip all up to that point
-		int padding = input->get_padding_frame_count();
-		padding -= 2;
-		input->skip_next(padding);
-
-		// fill first half of buffer with actual data
-		internal_fill_buffers(0);
-		internal_fill_buffers(k_half);
-	}
-
-	~InterpolatedSampler()
-	{
-		delete[] _bufs;
-		delete _input;
-	}
-
-	int get_sample_rate() override { return _out_sr; };
-	int get_channel_count() override { return _channel_count; }
-
-	void internal_fill_buffers(size_t ofs)
-	{
-		if (_channel_count < 2)
-		{
-			// no need for de-interleave
-			_input->get_next(_bufs[0]._b + ofs, k_half);
-			return;
-		}
-
-		// de-interleave
-		for (int i = 0; i < k_half; ++i)
-		{
-			_input->get_next(_channel_buffer.data(), 1);
-			for (size_t c = 0; c < (size_t)_channel_count; ++c)
-				_bufs[c]._b[ofs+i] = _channel_buffer[c];
-		}
-	}
-
-	int get_padding_frame_count() override
-	{
-		// the padding is eaten in constructor and return 0 here
-		return 0;
-	}
-
-	void get_next(double* buf_interleaved, int64_t frame_count) override
-	{
-		int write_index = 0;
-		for (int64_t frame_index = 0; frame_index < frame_count; ++frame_index)
-		{
-			// calculate frac (common for all channels)
-			double frac = (double)_read_index_frac * _read_index_frac_limit_recip;
-
-			// write interleaved
-			for (int c = 0; c < _channel_count; ++c)
-			{
-				buf_interleaved[write_index] = sample_32x_6p_5z(_bufs[c]._b, k_mask, _read_index, frac);
-				++write_index;
-			}
-
-			// move index
-			_read_index_frac += _read_index_frac_add;
-
-			// handle wrapping (maybe trust modulo here)
-			while (_read_index_frac >= _read_index_frac_limit)
-			{
-				++_read_index;
-				_read_index_frac -= _read_index_frac_limit;
-
-				switch (_read_index)
-				{
-				case k_half:
-					internal_fill_buffers(0);
-					break;
-				case k_bufs:
-					internal_fill_buffers(k_half);
-					_read_index = 0;
-					break;
-				}
-			}
-
-		}
-	}
-
-	void skip_next(int64_t frame_count) override
-	{
-		for (int64_t frame_index = 0; frame_index < frame_count; ++frame_index)
-		{
-			// move index
-			_read_index_frac += _read_index_frac_add;
-
-			// handle wrapping (maybe trust modulo here)
-			while (_read_index_frac >= _read_index_frac_limit)
-			{
-				++_read_index;
-				_read_index_frac -= _read_index_frac_limit;
-
-				switch (_read_index)
-				{
-				case k_half:
-					internal_fill_buffers(0);
-					break;
-				case k_bufs:
-					internal_fill_buffers(k_half);
-					_read_index = 0;
-					break;
-				}
-			}
-
-		}
-	}
-
-};
 
 // maybe normalize each phase?
 // or just the whole kernel
@@ -587,8 +351,8 @@ void normalize_filter(double* filter_kernel, int filter_len, int up)
 
 		double mul = (double)up / sum;
 
-		//		uint64_t* mul_p = (uint64_t*)&mul;
-		//		printf("FINAL, mul=%g %llx\n", mul, *mul_p);
+		// uint64_t* mul_p = (uint64_t*)&mul;
+		// printf("FINAL, mul=%g %llx\n", mul, *mul_p);
 
 		for (int i = 0; i < filter_len; ++i)
 			filter_kernel[i] *= mul;
@@ -608,28 +372,19 @@ void create_filter_self_convolved(double* out_kernel_buffer, int len1, int trans
 	double scale_len = bw / up;
 	double scale_amp = bw / sqrt(up);
 	create_windowed_sinc(filter1, len1, scale_len, scale_amp);
+
 	double* buf_freq1 = (double*)pffftd_aligned_malloc(transform_size * sizeof(double));
 	pffftd_transform(fft, filter1, buf_freq1, buf_work, PFFFTD_FORWARD);
 
-	// create a second sligtly lower (maybe switch back to pure self convolve)
-	double* filter2 = (double*)pffftd_aligned_malloc(transform_size * sizeof(double));
-	memset(filter2, 0, transform_size * sizeof(double));
-	scale_len = (bw * 0.9995) / up;
-	scale_amp = (bw * 0.9995) / sqrt(up);
-	create_windowed_sinc(filter2, len1, scale_len, scale_amp);
-	double* buf_freq2 = (double*)pffftd_aligned_malloc(transform_size * sizeof(double));
-	pffftd_transform(fft, filter2, buf_freq2, buf_work, PFFFTD_FORWARD);
-
-	// self convolve
 	double* buf_freq3 = (double*)pffftd_aligned_malloc(transform_size * sizeof(double));
 	double transform_recip = 1.0 / transform_size;
-	pffftd_zconvolve_no_accumulate(fft, buf_freq1, buf_freq2, buf_freq3, transform_recip); // convolve
+
+	// self convolve
+	pffftd_zconvolve_no_accumulate(fft, buf_freq1, buf_freq1, buf_freq3, transform_recip); // convolve
 	pffftd_transform(fft, buf_freq3, out_kernel_buffer, buf_work, PFFFTD_BACKWARD);
 
 	pffftd_aligned_free(buf_freq3);
-	pffftd_aligned_free(buf_freq2);
 	pffftd_aligned_free(buf_freq1);
-	pffftd_aligned_free(filter2);
 	pffftd_aligned_free(filter1);
 	pffftd_aligned_free(buf_work);
 	pffftd_destroy_setup(fft);
@@ -664,22 +419,17 @@ ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* inpu
 		puts("ERROR");
 
 	// formula to deal with BW-limiting and upsampling
-//	int filter_1_half_len = 2 + up * 1;
 //	int filter_1_half_len = 160 + up * 115;
-
 //	int filter_1_half_len = 320 + up * 230;
-
 	int filter_1_half_len = 640 + up * 460;
-
 	// filter_1_half_len = 1280 + up * 920; // no amplification at nyqvist
 	// int filter_1_half_len = 2560 + up * 1840;
 	// filter_1_half_len = 3200 + up * 2300;
 
 	if (quality_percentage > 95)
-		filter_1_half_len = 3840 + up * 2760;
-	
+		filter_1_half_len = 3200 + up * 2300;
 
-
+		//		filter_1_half_len = 3840 + up * 2760;
 
 	// clamp
 	if (filter_1_half_len > limit)
@@ -716,7 +466,6 @@ ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* inpu
 //		simple_wav_write_mono_f64("kernel_self_convolved.wav", filter_kernel, filter_2_len);
 //	}
 	
-
 	normalize_filter(filter_kernel, filter_2_len, up);
 	
 	// if up is large, might be better off doing
@@ -770,7 +519,7 @@ ISampleProducer* make_upsampler_pair(int up1, int up2, double bw, ISampleProduce
 	printf("Up-pair of %dx(HQ) and %dx\n", up1, up2);
 	int limit = 600;
 	if (quality_percentage < 90)
-		limit = 100;
+		limit = 80;
 
 	return make_integer_upsampler(up2, 0.9, make_integer_upsampler(up1, bw, input, quality_percentage), quality_percentage, limit);
 }
@@ -805,7 +554,7 @@ ISampleProducer* streamer_factory(ISampleProducer* input, int sr_out, int qualit
 
 	// fixme bw can be input
 	// but currently is kind of connected to the filter-size
-	double bw = 0.9995f;
+	double bw = 0.999;
 	
 	if (quality_percentage < 90)
 		bw = 0.995;
