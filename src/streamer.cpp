@@ -392,7 +392,7 @@ struct InterpolatedSampler : ISampleProducer
 	int _out_sr;
 
 	enum {
-		k_bufs = 256, // interpolation only uses 6 samples 
+		k_bufs = 64, // interpolation only uses 6 samples 
 		k_mask = k_bufs - 1,
 		k_half = k_bufs >> 1
 	};
@@ -669,9 +669,9 @@ ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* inpu
 //	int filter_1_half_len = 2 + up * 1;
 //	int filter_1_half_len = 160 + up * 115;
 
-	int filter_1_half_len = 320 + up * 230;
+//	int filter_1_half_len = 320 + up * 230;
 
-//	int filter_1_half_len = 640 + up * 460;
+	int filter_1_half_len = 640 + up * 460;
 
 	// filter_1_half_len = 1280 + up * 920; // no amplification at nyqvist
 
