@@ -419,22 +419,20 @@ ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* inpu
 		puts("ERROR");
 
 	// formula to deal with BW-limiting and upsampling
-//	int filter_1_half_len = 160 + up * 115;
-//	int filter_1_half_len = 320 + up * 230;
-	int filter_1_half_len = 640 + up * 460;
-	// filter_1_half_len = 1280 + up * 920; // no amplification at nyqvist
-	// int filter_1_half_len = 2560 + up * 1840;
-	// filter_1_half_len = 3200 + up * 2300;
+	int filter_1_half_len = 500 + up * 500;
+	// filter_1_half_len = 1000 + up * 1000; // no amplification at nyqvist
+	// filter_1_half_len = 2000 + up * 2000;
 
 	if (quality_percentage > 95)
-		filter_1_half_len = 3200 + up * 2300;
+		filter_1_half_len = 3000 + up * 3000;
 
-		//		filter_1_half_len = 3840 + up * 2760;
+	// filter_1_half_len = 4000 + up * 4000;
+
 
 	// clamp
 	if (filter_1_half_len > limit)
 	{
-//		printf("limit half-len to %d\n", limit);
+		printf("limit half-len to %d\n", limit);
 		filter_1_half_len = limit;
 	}
 
@@ -521,11 +519,12 @@ ISampleProducer* make_upsampler_pair(int up1, int up2, double bw, ISampleProduce
 	if (quality_percentage < 90)
 		limit = 80;
 
-	return make_integer_upsampler(up2, 0.9, make_integer_upsampler(up1, bw, input, quality_percentage), quality_percentage, limit);
+	return make_integer_upsampler(up2, 0.75, make_integer_upsampler(up1, bw, input, quality_percentage), quality_percentage, limit);
 }
 
 ISampleProducer* make_upsampler_chain(int up, double bw, ISampleProducer* input, int quality_percentage)
 {
+#if 1
 	// special case 1,2,3
 	if (up < 4)
 		return make_integer_upsampler(1, bw, input, quality_percentage);
@@ -543,6 +542,7 @@ ISampleProducer* make_upsampler_chain(int up, double bw, ISampleProducer* input,
 		if ((up % f) == 0)
 			return make_upsampler_pair(f, up / f, bw, input, quality_percentage);
 	}
+#endif
 
 	// need to use HQ for whole thing
 	return make_integer_upsampler(up, bw, input, quality_percentage);
@@ -585,7 +585,7 @@ ISampleProducer* streamer_factory(ISampleProducer* input, int sr_out, int qualit
 	}
 
 	// interpolated
-	printf("Not rational enough: %d / %d\n", sr_out, sr_in);
+	printf("Not rational enough: %d / %d (will go through 32x)\n", sr_out, sr_in);
 	return new InterpolatedSampler(sr_out, make_upsampler_chain(32, bw, input, quality_percentage));
 }
 
