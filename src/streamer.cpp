@@ -554,7 +554,7 @@ ISampleProducer* streamer_factory(ISampleProducer* input, int sr_out, int qualit
 
 	// fixme bw can be input
 	// but currently is kind of connected to the filter-size
-	double bw = 0.999;
+	double bw = 0.9992;
 	
 	if (quality_percentage < 90)
 		bw = 0.995;
