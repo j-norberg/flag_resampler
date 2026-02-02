@@ -701,6 +701,10 @@ ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* inpu
 		++bits;
 	int transform_len = 1 << bits;
 
+	int inbuf_len = transform_len - filter_2_len;
+	printf("FFT bits=%d, transform-len=%dK, filter-len=%dK, inbuf-len=%dK, BW=%f\n", bits, transform_len / 1024, filter_2_len / 1024, inbuf_len / 1024, bw);
+	fflush(stdout);
+
 	double* filter_kernel = (double*)pffftd_aligned_malloc(transform_len * sizeof(double)); // filter_kernel is only used in init
 	memset(filter_kernel, 0, transform_len * sizeof(double));
 	create_filter_self_convolved(filter_kernel, filter_1_len, transform_len, bw, up);
@@ -710,9 +714,6 @@ ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* inpu
 	normalize_filter(filter_kernel, filter_2_len, up);
 	
 	// how large transform do we really need?
-
-	int inbuf_len = transform_len - filter_2_len;
-	printf("FFT bits=%d, transform-len=%dK, filter-len=%dK, inbuf-len=%dK, BW=%f\n", bits, transform_len/1024, filter_2_len / 1024, inbuf_len / 1024, bw);
 
 	ISampleProducer* upsampler = nullptr;
 	switch (bits)
@@ -737,6 +738,8 @@ ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* inpu
 	case 23: upsampler = new StreamerUpT<23>(filter_kernel, filter_2_len, up, input); break;
 
 	default:
+		printf("requested %d bits of FFT, too much\n", bits);
+		fflush(stdout);
 		assert(false);
 		break;
 	}
@@ -823,6 +826,7 @@ ISampleProducer* streamer_factory(ISampleProducer* input, int sr_out, int qualit
 	}
 
 	// interpolated
+	printf("Not rational enough: %d / %d\n", sr_out, sr_in);
 	return new InterpolatedSampler(sr_out, make_upsampler_chain(32, bw, input, quality_percentage));
 }
 
