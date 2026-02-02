@@ -557,10 +557,6 @@ void normalize_filter(double* filter_kernel, int filter_len, int up)
 			double diff = (filter_kernel[a] - filter_kernel[b]);
 			if (fabs(diff) > 0.000001)
 				puts("no symmetry, internal bug");
-
-//			double avg = (filter_kernel[a] + filter_kernel[b]) * 0.5;
-	//		filter_kernel[a] = avg;
-		//	filter_kernel[b] = avg;
 		}
 	}
 #endif
@@ -618,8 +614,8 @@ void create_filter_self_convolved(double* out_kernel_buffer, int len1, int trans
 	// create a second sligtly lower (maybe switch back to pure self convolve)
 	double* filter2 = (double*)pffftd_aligned_malloc(transform_size * sizeof(double));
 	memset(filter2, 0, transform_size * sizeof(double));
-	scale_len = (bw * 0.999) / up;
-	scale_amp = (bw * 0.999) / sqrt(up);
+	scale_len = (bw * 0.9995) / up;
+	scale_amp = (bw * 0.9995) / sqrt(up);
 	create_windowed_sinc(filter2, len1, scale_len, scale_amp);
 	double* buf_freq2 = (double*)pffftd_aligned_malloc(transform_size * sizeof(double));
 	pffftd_transform(fft, filter2, buf_freq2, buf_work, PFFFTD_FORWARD);
@@ -676,12 +672,13 @@ ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* inpu
 	int filter_1_half_len = 640 + up * 460;
 
 	// filter_1_half_len = 1280 + up * 920; // no amplification at nyqvist
+	// int filter_1_half_len = 2560 + up * 1840;
+	// filter_1_half_len = 3200 + up * 2300;
 
 	if (quality_percentage > 95)
-		filter_1_half_len = 3200 + up * 2300;
+		filter_1_half_len = 3840 + up * 2760;
 	
 
-	//	int filter_1_half_len = 2560 + up * 1840;
 
 
 	// clamp
@@ -722,6 +719,9 @@ ISampleProducer* make_integer_upsampler(int up, double bw, ISampleProducer* inpu
 
 	normalize_filter(filter_kernel, filter_2_len, up);
 	
+	// if up is large, might be better off doing
+	// naive convolution
+
 	// how large transform do we really need?
 
 	ISampleProducer* upsampler = nullptr;
@@ -772,13 +772,13 @@ ISampleProducer* make_upsampler_pair(int up1, int up2, double bw, ISampleProduce
 	if (quality_percentage < 90)
 		limit = 100;
 
-	return make_integer_upsampler(up2, 0.99, make_integer_upsampler(up1, bw, input, quality_percentage), quality_percentage, limit);
+	return make_integer_upsampler(up2, 0.9, make_integer_upsampler(up1, bw, input, quality_percentage), quality_percentage, limit);
 }
 
 ISampleProducer* make_upsampler_chain(int up, double bw, ISampleProducer* input, int quality_percentage)
 {
-	// special case 1
-	if (up < 2)
+	// special case 1,2,3
+	if (up < 4)
 		return make_integer_upsampler(1, bw, input, quality_percentage);
 
 	// try split in 2
@@ -804,7 +804,8 @@ ISampleProducer* streamer_factory(ISampleProducer* input, int sr_out, int qualit
 	int sr_in = input->get_sample_rate();
 
 	// fixme bw can be input
-	double bw = 0.999f;
+	// but currently is kind of connected to the filter-size
+	double bw = 0.9995f;
 	
 	if (quality_percentage < 90)
 		bw = 0.995;
