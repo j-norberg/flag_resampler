@@ -1,3 +1,9 @@
+#pragma warning( disable : 4514 ) // unref. inline
+#pragma warning( disable : 4710 ) // not inlined
+#pragma warning( disable : 4711 ) // inline expansion
+#pragma warning( disable : 4820 ) // padding
+#pragma warning( disable : 5045 ) // spectre
+
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
@@ -6,19 +12,15 @@
 #include <string>
 #include <vector>
 
+#define _USE_MATH_DEFINES 
+#include <math.h>
+
 #include "streamer.h"
 
 #include "memory_reader.h"
 
-#pragma warning( disable : 4514 ) // unref. inline
-#pragma warning( disable : 4820 ) // padding
-#pragma warning( disable : 5045 ) // spectre
-
 #include "file_reader.h"
 #include "writer.h"
-
-#define _USE_MATH_DEFINES 
-#include <math.h>
 
 #include "options.inl"
 #include "timer.inl"

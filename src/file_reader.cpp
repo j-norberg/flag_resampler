@@ -7,6 +7,7 @@
 #pragma warning( push )
 
 #pragma warning( disable : 4365 )
+#pragma warning( disable : 4711 ) // inline expansion
 #pragma warning( disable : 4820 )
 #pragma warning( disable : 5039 )
 #pragma warning( disable : 5219 )

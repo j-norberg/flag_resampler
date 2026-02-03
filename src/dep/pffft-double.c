@@ -1,5 +1,6 @@
 // jnorberg disable warnings
 #pragma warning( disable : 4255 )
+#pragma warning( disable : 4711 ) // inline expansion
 #pragma warning( disable : 5045 )
 
 /* Copyright (c) 2013  Julien Pommier ( pommier@modartt.com )

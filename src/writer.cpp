@@ -1,13 +1,12 @@
 
-#include <cstdlib>
-#include <cassert>
-
-#include "sample_producer.h"
-
 #pragma warning( disable : 4514 ) // unref. inline
+#pragma warning( disable : 4711 ) // inline expansion
 #pragma warning( disable : 4820 ) // padding
 #pragma warning( disable : 5045 ) // spectre
 
+#include <cstdlib>
+#include <cassert>
+#include "sample_producer.h"
 #include "writer.h"
 
 // Write to a large-ish buffer before calling fwrite

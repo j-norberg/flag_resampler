@@ -1,4 +1,10 @@
-﻿#include "dep/pffft-double.h"
+﻿#pragma warning( disable : 4514 ) // unused inl. removed
+#pragma warning( disable : 4710 ) // not inlined
+#pragma warning( disable : 4711 ) // inline expansion
+#pragma warning( disable : 4820 ) // padding
+#pragma warning( disable : 5045 ) // spectre
+
+#include "dep/pffft-double.h"
 
 #include <vector>
 #include <cassert>
@@ -9,10 +15,6 @@
 #include <math.h> // for M_PI
 
 #include <limits> // for epsilon
-
-#pragma warning( disable : 4514 ) // unused inl. removed
-#pragma warning( disable : 4820 ) // padding
-#pragma warning( disable : 5045 ) // spectre
 
 #include "ok_interp.inl"
 #include "streamer.h"

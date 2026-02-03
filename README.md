@@ -5,7 +5,9 @@ High quality sample rate converter (src) a.k.a resampler. Loads wav and flac and
 * Self-Convolved Kernel
 * Large Filter-Kernel (depending on source and target rate)
 * Support very long files (much larger than your RAM could hold)
-
+* Internal resolution of 64-bit (required for convolution of very long filters)
+* Support reading and writing 64-bit audio (needed for testing, less for practical use)
+* Attempts to predict the signal before and after the input file to gracefully handle a "gapless playback" issue where a continous audio-stream (an entire album) is cut up and resampled as individual tracks. (IMHO an engineer should resample the complete-stream before cutting up the individual tracks).
 
 ### Algorithm / Approach ###
 
