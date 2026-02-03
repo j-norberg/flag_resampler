@@ -67,3 +67,10 @@ f32 = 32 bit IEEE float (this is the default)
 f64 = 64 bit IEEE float (this is the best quality)
 
 
+### Depencencies ###
+
+All included in src/dep
+
+* pffft-double Copyright (c) 2013  Julien Pommier
+* dr_wav by David Reid (Public Domain)
+* dr_flac by David Reid (Public Domain)
