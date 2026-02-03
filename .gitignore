@@ -5,7 +5,9 @@ x64/
 vsProj/x64/
 vsProj/Debug/
 vsProj/Release/
+vsProj/*.flac
 vsProj/*.wav
+*.flac
 *.wav
 *.o
 *.exe

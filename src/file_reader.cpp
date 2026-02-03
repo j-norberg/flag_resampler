@@ -218,9 +218,10 @@ FileReader::FileReader(const char* file_name)
 		_impl->_flac = drflac_open_file(file_name, nullptr);
 		if (_impl->_flac != nullptr)
 		{
-			// get stats from wav
+			// get stats from flac
+			// Note: Flac uses frames not samples
 			_channel_count = _impl->_flac->channels;
-			_total_frame_size = (int64_t)_impl->_flac->totalPCMFrameCount / _channel_count;
+			_total_frame_size = (int64_t)_impl->_flac->totalPCMFrameCount;
 			_sample_rate = (int)_impl->_flac->sampleRate;
 			_error_code = eOk;
 		}
@@ -277,6 +278,7 @@ void UpConvertInt(double* dest, const int* source, size_t count)
 	}
 }
 
+// guaranteed to not read more than buf_count at a time
 void FileReader::read_data_from_file(size_t frame_offset, size_t frame_count)
 {
 	size_t frame_size = sizeof(double) * _channel_count;
@@ -319,7 +321,6 @@ void FileReader::read_data_from_file(size_t frame_offset, size_t frame_count)
 		}
 		else if (pWav->translatedFormatTag == DR_WAVE_FORMAT_PCM && pWav->bytesPerSample == 4)
 		{
-			// 32-bit int, use buffer even though types don't match
 			int* bufi = (int*)_temp_buf_interleaved;
 			samples_read = drwav_read(_impl->_wav, samples_to_read, bufi);
 			UpConvertInt(buf_f64, bufi, samples_read);
@@ -332,8 +333,11 @@ void FileReader::read_data_from_file(size_t frame_offset, size_t frame_count)
 	}
 	else if (_impl->_flac)
 	{
-		samples_read = drflac_read_pcm_frames_f32(_impl->_flac, samples_to_read, _temp_buf_interleaved);
-		UpConvert(buf_f64, _temp_buf_interleaved, samples_read);
+		// Note: Flac uses frames not samples
+		int* bufi = (int*)_temp_buf_interleaved;
+		int frames_read = drflac_read_pcm_frames_s32(_impl->_flac, frame_count, bufi);
+		samples_read = frames_read * _channel_count;
+		UpConvertInt(buf_f64, bufi, samples_read);
 	}
 	else
 	{
