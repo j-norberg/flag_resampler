@@ -27,6 +27,7 @@ public:
 private:
 	FileReaderImpl* _impl;
 
+	float* _temp_buf_interleaved = nullptr;
 	double* _buf_interleaved_f64 = nullptr;	// a buffer
 
 	// when the file is fully read we use the last samples and predict some more

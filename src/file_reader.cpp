@@ -228,10 +228,12 @@ FileReader::FileReader(const char* file_name)
 
 	// allocate buffers
 	_buf_interleaved_f64 = new double[(size_t)(k_buf_frames * _channel_count)];
+	_temp_buf_interleaved = new float[(size_t)(k_buf_frames * _channel_count)];
 
 	// set to zero to ensure no bad values start out in here (needed for very short files)
 	memset(_buf_interleaved_f64, 0, k_buf_frames * _channel_count * sizeof(double));
-
+	memset(_temp_buf_interleaved, 0, k_buf_frames * _channel_count * sizeof(float));
+	
 	// check whole buffer
 	check_all(_buf_interleaved_f64, k_buf_frames * _channel_count);
 
@@ -264,6 +266,16 @@ void UpConvert(double* dest, const float* source, size_t count)
 		dest[i] = (double)source[i];
 }
 
+void UpConvertInt(double* dest, const int* source, size_t count)
+{
+	double recip = 1.0 / 2147483647.0;
+	for (size_t i = 0; i < count; ++i)
+	{
+		double v = (double)source[i];
+		v *= recip;
+		dest[i] = v;
+	}
+}
 
 void FileReader::read_data_from_file(size_t frame_offset, size_t frame_count)
 {
@@ -293,9 +305,8 @@ void FileReader::read_data_from_file(size_t frame_offset, size_t frame_count)
 	size_t samples_to_read = frame_count * _channel_count;
 	size_t samples_read = 0;
 
-	// write 32bit data to second half and explode later 
+	// write 32bit data to temp-buffer and explode later 
 	double* buf_f64 = _buf_interleaved_f64 + samples_offset;
-	float* buf_f32 = ((float*)buf_f64) + samples_to_read;
 
 	// read N samples from the file
 	if (_impl->_wav)
@@ -306,16 +317,23 @@ void FileReader::read_data_from_file(size_t frame_offset, size_t frame_count)
 			// 64bit proper
 			samples_read = drwav_read(pWav, samples_to_read, buf_f64);
 		}
+		else if (pWav->translatedFormatTag == DR_WAVE_FORMAT_PCM && pWav->bytesPerSample == 4)
+		{
+			// 32-bit int, use buffer even though types don't match
+			int* bufi = (int*)_temp_buf_interleaved;
+			samples_read = drwav_read(_impl->_wav, samples_to_read, bufi);
+			UpConvertInt(buf_f64, bufi, samples_read);
+		}
 		else
 		{
-			samples_read = drwav_read_f32(_impl->_wav, samples_to_read, buf_f32);
-			UpConvert(buf_f64, buf_f32, samples_read);
+			samples_read = drwav_read_f32(_impl->_wav, samples_to_read, _temp_buf_interleaved);
+			UpConvert(buf_f64, _temp_buf_interleaved, samples_read);
 		}
 	}
 	else if (_impl->_flac)
 	{
-		samples_read = drflac_read_pcm_frames_f32(_impl->_flac, samples_to_read, buf_f32);
-		UpConvert(buf_f64, buf_f32, samples_read);
+		samples_read = drflac_read_pcm_frames_f32(_impl->_flac, samples_to_read, _temp_buf_interleaved);
+		UpConvert(buf_f64, _temp_buf_interleaved, samples_read);
 	}
 	else
 	{
@@ -376,6 +394,9 @@ FileReader::~FileReader()
 {
 	delete _impl;
 	delete [] _buf_interleaved_f64;
+
+	if (_temp_buf_interleaved != nullptr)
+		delete[] _temp_buf_interleaved;
 
 	if (_buf_predicted_tail != nullptr)
 		delete[] _buf_predicted_tail;
