@@ -10,9 +10,9 @@ High quality sample rate converter (src) a.k.a resampler. Loads wav and flac and
 ### Algorithm / Approach ###
 
 * Integer upsampling is done with zero-padding and convolution with a filter kernel that creates a nice interpolator.  
-* Integer downsampling is done with convolution of with a filter kernel that band-limits the signal followed by a trivial decimator (just skip N samples for every sample output).  
-* Rational ratios up to a numerator of 31 are handled with a combination of first upsample and bandlimit with a single filter kernel and then a trivial decimation step (the divisor)
-* More uneven ratios (such as 147/320, needed for 96k -> 44k1) there is first an upsample and bandlimit-step to get to 32x and then an interpolating sampler is used based on "Polynomial Interpolators for
+* Integer downsampling is done with convolution with a filter kernel that band-limits the signal followed by a trivial decimator (just skip N samples for every sample output).  
+* Rational ratios up to a numerator of 31 are handled with a first convolution-step that upsample (by the numerator) and bandlimit and then a trivial decimation step (the divisor)
+* More uneven ratios (such as 147/320, needed for 96k -> 44k1) are done by first an upsample-and-bandlimit-step to get to 32x and then an interpolating sampler is used based on "Polynomial Interpolators for
 High-Quality Resampling of
 Oversampled Audio" by Olli Niemitalo (2001)
 
@@ -25,7 +25,7 @@ https://src.hydrogenaudio.org/compareresults?id1=7ad149e6-7495-493b-a9c0-f9b17d8
 
 ### How do I get set up? ###
 
-(For Windows, install Msys2, also the executable becomes "flag_resampler.exe")
+(For Windows, install Msys2)
 
 ```bash
 git clone https://github.com/j-norberg/flag_resampler.git
