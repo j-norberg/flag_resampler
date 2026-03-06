@@ -83,6 +83,8 @@ public:
 
 	~FileReader();
 
+	bool is_flac() const; // useful to balance threads?
+
 	void read_data_from_file(size_t frame_offset, size_t frame_count);
 
 	int get_sample_rate() override { return _sample_rate; }

@@ -278,6 +278,11 @@ void UpConvertInt(double* dest, const int* source, size_t count)
 	}
 }
 
+bool FileReader::is_flac() const
+{
+	return _impl->_flac != nullptr;
+}
+
 // guaranteed to not read more than buf_count at a time
 void FileReader::read_data_from_file(size_t frame_offset, size_t frame_count)
 {
