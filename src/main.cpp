@@ -60,10 +60,84 @@ void put_progress(int pct)
 	fflush(stdout);
 }
 
+bool perform_conversion(const std::string& out_file, int out_sr, int quality, Writer::OutFormat format, FileReader* reader)
+{
+	int64_t in_frame_count = reader->get_frame_count();
+	int in_channel_count = reader->get_channel_count();
+	int in_sample_rate = reader->get_sample_rate();
+	double in_seconds = (double)in_frame_count / (double)in_sample_rate;
+
+	printf("INPUT: channel-count=%d, rate=%d, frames=%lld (%.3fs)\n", in_channel_count, in_sample_rate, in_frame_count, in_seconds);
+
+	// calculate out-file samples, round to closest
+	int64_t out_frame_count = (out_sr * in_frame_count + (in_sample_rate / 2)) / in_sample_rate;
+
+	printf("OUTPUT: rate=%d, frames=%lld\n", out_sr, out_frame_count);
+
+	ISampleProducer* streamer = nullptr;
+
+	// check special case
+	if (in_sample_rate == out_sr)
+	{
+		puts("note: sample-rates same, will still output file");
+		streamer = reader;
+	}
+	else
+	{
+		//
+		streamer = streamer_factory(reader, out_sr, quality);
+	}
+
+	if (streamer == nullptr)
+	{
+		// issue?
+		puts("error: can not create converter?");
+		return 0;
+	}
+
+	Writer writer(out_file.c_str(), out_frame_count, streamer, format);
+
+	Timer t1;
+	t1.reset();
+
+	while (writer.update())
+		put_progress(writer.get_progress_percent());
+
+	float elapsed1 = (float)t1.elapsed_ms();
+
+	put_progress(100);
+
+	if (elapsed1 > 1000.0f)
+		printf("\nConversion Done in %f s \n", elapsed1 / 1000.0f);
+	else
+		printf("\nConversion Done in %f ms \n", elapsed1);
+
+	delete streamer; // deletes their input
+
+	return true;
+}
+
+void run_tests()
+{
+	puts("run tests"); fflush(stdout);
+
+	// generate sweep at 96k, 44k1
+	// check performance doing 96k->44k1
+	// compare
+
+	puts("done"); fflush(stdout);
+}
+
 // fixme maybe other tools, like generate sweeps?
 int main(int argc, const char** argv)
 {
 	Options s = get_options(argc, argv);
+
+	if (s.test)
+	{
+		run_tests();
+		return 0;
+	}
 
 	if (s.show_version || s.show_usage)
 	{
@@ -115,57 +189,7 @@ int main(int argc, const char** argv)
 		return -1;
 	}
 
-	int64_t in_frame_count = reader->get_frame_count();
-	int in_channel_count = reader->get_channel_count();
-	int in_sample_rate = reader->get_sample_rate();
-	double in_seconds = (double)in_frame_count / (double)in_sample_rate;
-
-	printf("INPUT: channel-count=%d, rate=%d, frames=%lld (%.3fs)\n", in_channel_count, in_sample_rate, in_frame_count, in_seconds);
-
-	// calculate out-file samples, round to closest
-	int64_t out_frame_count = (s.out_sr * in_frame_count + (in_sample_rate/2)) / in_sample_rate;
-
-	printf("OUTPUT: rate=%d, frames=%lld\n", s.out_sr, out_frame_count);
-
-	ISampleProducer* streamer = nullptr;
-
-	// check special case
-	if (in_sample_rate == s.out_sr)
-	{
-		puts("note: sample-rates same, will still output file");
-		streamer = reader;
-	}
-	else
-	{
-		//
-		streamer = streamer_factory(reader, s.out_sr, s.quality);
-	}
-
-	if (streamer == nullptr)
-	{
-		// issue?
-		puts("error: can not create converter?");
-		return 0;
-	}
-
-	Writer writer(s.out_file.c_str(), out_frame_count, streamer, s._format);
-
-	Timer t1;
-	t1.reset();
-
-	while (writer.update())
-		put_progress(writer.get_progress_percent());
-
-	float elapsed1 = (float)t1.elapsed_ms();
-
-	put_progress(100);
-
-	if (elapsed1 > 1000.0f)
-		printf("\nConversion Done in %f s \n", elapsed1/1000.0f);
-	else
-		printf("\nConversion Done in %f ms \n", elapsed1);
-
-	delete streamer; // deletes their input
+	perform_conversion(s.out_file, s.out_sr, s.quality, s._format, reader);
 
 	return 0;
 }

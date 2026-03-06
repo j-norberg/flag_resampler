@@ -4,6 +4,7 @@ struct Options
 	// bool test = false;
 	bool show_version = false;
 	bool show_usage = false;
+	bool test = false;
 
 	std::string in_file;
 	std::string out_file;
@@ -29,13 +30,11 @@ bool handle_flag(Options& o, int argc, const char** argv, int& index)
 {
 	std::string arg(argv[index]);
 
-#if 0
 	if (arg == "-t" || arg == "--test")
 	{
 		o.test = true;
 		return true;
 	}
-#endif
 
 	if (arg == "-v" || arg == "--version")
 	{

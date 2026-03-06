@@ -340,8 +340,8 @@ void FileReader::read_data_from_file(size_t frame_offset, size_t frame_count)
 	{
 		// Note: Flac uses frames not samples
 		int* bufi = (int*)_temp_buf_interleaved;
-		int frames_read = drflac_read_pcm_frames_s32(_impl->_flac, frame_count, bufi);
-		samples_read = frames_read * _channel_count;
+		size_t frames_read = drflac_read_pcm_frames_s32(_impl->_flac, frame_count, bufi);
+		samples_read = (size_t)(frames_read * _channel_count);
 		UpConvertInt(buf_f64, bufi, samples_read);
 	}
 	else
