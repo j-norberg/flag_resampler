@@ -1,4 +1,4 @@
-#pragma warning( disable : 4514 ) // unref. inline
+﻿#pragma warning( disable : 4514 ) // unref. inline
 #pragma warning( disable : 4710 ) // not inlined
 #pragma warning( disable : 4711 ) // inline expansion
 #pragma warning( disable : 4820 ) // padding
@@ -60,14 +60,17 @@ void put_progress(int pct)
 	fflush(stdout);
 }
 
-bool perform_conversion(const std::string& out_file, int out_sr, int quality, Writer::OutFormat format, FileReader* reader)
+bool perform_conversion(const std::string& out_file, int out_sr, int quality, Writer::OutFormat format, ISampleProducer* reader, int64_t in_frame_count, bool is_flac)
 {
-	int64_t in_frame_count = reader->get_frame_count();
+	// time the whole thing, setup and all
+	Timer t1;
+	t1.reset();
+
 	int in_channel_count = reader->get_channel_count();
 	int in_sample_rate = reader->get_sample_rate();
 	double in_seconds = (double)in_frame_count / (double)in_sample_rate;
 
-	printf("INPUT: channel-count=%d, rate=%d, frames=%lld (%.3fs)\n", in_channel_count, in_sample_rate, in_frame_count, in_seconds);
+	printf("INPUT: channel-count=%d, rate=%d, frames=%lld (%.3fs) (flac=%d)\n", in_channel_count, in_sample_rate, in_frame_count, in_seconds, is_flac ? 1 : 0);
 
 	// calculate out-file samples, round to closest
 	int64_t out_frame_count = (out_sr * in_frame_count + (in_sample_rate / 2)) / in_sample_rate;
@@ -97,9 +100,6 @@ bool perform_conversion(const std::string& out_file, int out_sr, int quality, Wr
 
 	Writer writer(out_file.c_str(), out_frame_count, streamer, format);
 
-	Timer t1;
-	t1.reset();
-
 	while (writer.update())
 		put_progress(writer.get_progress_percent());
 
@@ -117,12 +117,47 @@ bool perform_conversion(const std::string& out_file, int out_sr, int quality, Wr
 	return true;
 }
 
+std::vector<double> generate_sine_sweep(
+	double startFreq = 20.0,
+	double endFreq = 48000.0,
+	double duration = 10.0,
+	double sampleRate = 96000.0)
+{
+	const size_t numSamples = static_cast<size_t>(duration * sampleRate);
+	std::vector<double> sweep(numSamples);
+
+	// Logarithmic (exponential) sweep for perceptually uniform frequency coverage
+	const double k = std::log(endFreq / startFreq);
+
+	for (size_t i = 0; i < numSamples; ++i)
+	{
+		const double t = static_cast<double>(i) / sampleRate;
+
+		// Instantaneous phase of a log sweep:
+		//   φ(t) = 2π · f0 · T/ln(f1/f0) · (e^(t/T · ln(f1/f0)) - 1)
+		const double phase = 2.0 * M_PI * startFreq * (duration / k)
+			* (std::exp(t / duration * k) - 1.0);
+
+		sweep[i] = std::cos(phase);
+	}
+
+	return sweep;
+}
+
 void run_tests()
 {
 	puts("run tests"); fflush(stdout);
 
 	// generate sweep at 96k, 44k1
+	std::vector<double> v0 = generate_sine_sweep(20,48000,10, 96000);
+	std::vector<double> v1 = generate_sine_sweep(20, 48000, 10, 44100); // will alias, fade out as post-processing
+
 	// check performance doing 96k->44k1
+	MemoryReader* reader = new MemoryReader(v0, 96000, 1);
+	bool is_flac = false;
+	int64_t in_frame_count = reader->get_frame_count();
+	bool ok = perform_conversion("test.wav", 44100, 100, Writer::eFmtFloat, reader, in_frame_count, is_flac);
+
 	// compare
 
 	puts("done"); fflush(stdout);
@@ -189,7 +224,7 @@ int main(int argc, const char** argv)
 		return -1;
 	}
 
-	perform_conversion(s.out_file, s.out_sr, s.quality, s._format, reader);
+	perform_conversion(s.out_file, s.out_sr, s.quality, s.format, reader, reader->get_frame_count(), reader->is_flac());
 
 	return 0;
 }

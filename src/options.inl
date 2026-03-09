@@ -9,7 +9,7 @@ struct Options
 	std::string in_file;
 	std::string out_file;
 	int quality = 100;
-	Writer::OutFormat _format = Writer::eFmtFloat;
+	Writer::OutFormat format = Writer::eFmtFloat;
 
 	int out_sr = 44100;
 };
@@ -77,25 +77,25 @@ bool handle_flag(Options& o, int argc, const char** argv, int& index)
 
 		if (0 == strcmp(fmt_str, "16"))
 		{
-			o._format = Writer::eFmtInt16Dithered;
+			o.format = Writer::eFmtInt16Dithered;
 			return true;
 		}
 
 		if (0 == strcmp(fmt_str, "24"))
 		{
-			o._format = Writer::eFmtInt24Dithered;
+			o.format = Writer::eFmtInt24Dithered;
 			return true;
 		}
 
 		if (0 == strcmp(fmt_str, "f32"))
 		{
-			o._format = Writer::eFmtFloat;
+			o.format = Writer::eFmtFloat;
 			return true;
 		}
 
 		if (0 == strcmp(fmt_str, "f64"))
 		{
-			o._format = Writer::eFmtDouble;
+			o.format = Writer::eFmtDouble;
 			return true;
 		}
 

@@ -22,6 +22,14 @@ private:
 
 public:
 
+	MemoryReader(const std::vector<double>& buf, int sample_rate, int channel_count)
+	{
+		_buf_interleaved = buf.data();
+		_channel_count = channel_count;
+		_sample_rate = sample_rate;
+		_frame_count = (int64_t)buf.size() / channel_count;
+	}
+
 	MemoryReader(const double* buf, int64_t frame_count, int sample_rate, int channel_count)
 	{
 		_buf_interleaved = buf;
@@ -30,6 +38,9 @@ public:
 		_frame_count = frame_count;
 	}
 
+	int64_t get_frame_count() { return _frame_count; }
+
+	int get_padding_frame_count() override { return 0; }
 	int get_sample_rate() override { return _sample_rate; }
 	int get_channel_count() override { return _channel_count; }
 	
