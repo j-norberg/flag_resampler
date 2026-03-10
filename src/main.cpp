@@ -118,26 +118,21 @@ bool perform_conversion(const std::string& out_file, int out_sr, int quality, Wr
 }
 
 std::vector<double> generate_sine_sweep(
-	double startFreq = 20.0,
-	double endFreq = 48000.0,
+	double start_freq = 20.0,
+	double end_freq = 48000.0,
 	double duration = 10.0,
-	double sampleRate = 96000.0)
+	double sample_rate = 96000.0)
 {
-	const size_t numSamples = static_cast<size_t>(duration * sampleRate);
+	const size_t numSamples = static_cast<size_t>(duration * sample_rate);
 	std::vector<double> sweep(numSamples);
 
-	// Logarithmic (exponential) sweep for perceptually uniform frequency coverage
-	const double k = std::log(endFreq / startFreq);
+	// Rate of frequency increase per second
+	const double chirp_rate = (end_freq - start_freq) / duration;
 
 	for (size_t i = 0; i < numSamples; ++i)
 	{
-		const double t = static_cast<double>(i) / sampleRate;
-
-		// Instantaneous phase of a log sweep:
-		//   φ(t) = 2π · f0 · T/ln(f1/f0) · (e^(t/T · ln(f1/f0)) - 1)
-		const double phase = 2.0 * M_PI * startFreq * (duration / k)
-			* (std::exp(t / duration * k) - 1.0);
-
+		const double t = static_cast<double>(i) / sample_rate;
+		const double phase = 2.0 * M_PI * (start_freq * t + 0.5 * chirp_rate * t * t);
 		sweep[i] = std::cos(phase);
 	}
 
@@ -149,8 +144,7 @@ void run_tests()
 	puts("run tests"); fflush(stdout);
 
 	// generate sweep at 96k, 44k1
-	std::vector<double> v0 = generate_sine_sweep(20,48000,10, 96000);
-	std::vector<double> v1 = generate_sine_sweep(20, 48000, 10, 44100); // will alias, fade out as post-processing
+	std::vector<double> v0 = generate_sine_sweep(20,48000,60, 96000);
 
 	// check performance doing 96k->44k1
 	MemoryReader* reader = new MemoryReader(v0, 96000, 1);
@@ -159,6 +153,8 @@ void run_tests()
 	bool ok = perform_conversion("test.wav", 44100, 100, Writer::eFmtFloat, reader, in_frame_count, is_flac);
 
 	// compare
+
+//	std::vector<double> v1 = generate_sine_sweep(20, 48000, 60, 44100); // will alias, fade out as post-processing
 
 	puts("done"); fflush(stdout);
 }
