@@ -60,7 +60,14 @@ void put_progress(int pct)
 	fflush(stdout);
 }
 
-bool perform_conversion(const std::string& out_file, int out_sr, int quality, Writer::OutFormat format, ISampleProducer* reader, int64_t in_frame_count, bool is_flac)
+bool perform_conversion(
+	const std::string& out_file,
+	int out_sr,
+	int quality,
+	Writer::OutFormat format,
+	ISampleProducer* reader,
+	int64_t in_frame_count,
+	bool is_flac)
 {
 	// time the whole thing, setup and all
 	Timer t1;
@@ -79,6 +86,18 @@ bool perform_conversion(const std::string& out_file, int out_sr, int quality, Wr
 
 	ISampleProducer* streamer = nullptr;
 
+	// create workers
+	std::atomic_bool keep_workers_alive{ true };
+	WorkQueue workQueue;
+
+
+	std::vector<std::thread> workers;
+	const int worker_count = 1;
+	for (int worker_id = 0; worker_id < worker_count; ++worker_id)
+	{
+		workers.emplace_back(std::thread(WorkQueue::Worker, worker_id, &keep_workers_alive, &workQueue));
+	}
+
 	// check special case
 	if (in_sample_rate == out_sr)
 	{
@@ -88,7 +107,8 @@ bool perform_conversion(const std::string& out_file, int out_sr, int quality, Wr
 	else
 	{
 		//
-		streamer = streamer_factory(reader, out_sr, quality);
+		streamer = streamer_factory(&workQueue, reader, out_sr, quality);
+		//		streamer = streamer_factory(nullptr, reader, s.out_sr, s.quality);
 	}
 
 	if (streamer == nullptr)
@@ -112,7 +132,15 @@ bool perform_conversion(const std::string& out_file, int out_sr, int quality, Wr
 	else
 		printf("\nConversion Done in %f ms \n", elapsed1);
 
-	delete streamer; // deletes their input
+	// tell workers to stop 
+	keep_workers_alive = false;
+
+	// join-workers
+	for (size_t i = 0; i < workers.size(); ++i)
+		workers[i].join();
+	workers.clear();
+
+	delete streamer; // each ISampleProducer deletes their input
 
 	return true;
 }

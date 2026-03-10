@@ -27,6 +27,9 @@
     <None Include="..\src\interpolated_sampler.inl">
       <Filter>Source Files</Filter>
     </None>
+    <None Include="..\src\jobs.inl">
+      <Filter>Source Files</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\src\main.cpp">
